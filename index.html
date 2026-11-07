@@ -1162,6 +1162,27 @@ const PHRASES = [];
   for(const y of SYN) PHRASES.push({id:y.id, side:y.side||null, toks:norm(y.text).split(' ')});
   for(const p of PHRASES) p.prefixOfOther = PHRASES.some(q=> q!==p && q.toks.length>p.toks.length && p.toks.every((t,i)=>q.toks[i]===t));
 })();
+/* De herkenning zet spaties niet altijd waar wij ze verwachten ("slag klaarmaken", "stuur boord").
+   Plak 1–3 opeenvolgende woorden aan elkaar en knip ze opnieuw in bekende roeiwoorden. */
+const VOCAB = new Set([...PHRASES.flatMap(p=>p.toks), ...Object.keys(EXEC_TOK), ...FILLERS]);
+function segment(s){
+  const best = new Array(s.length+1).fill(null); best[0] = [];
+  for(let i=0;i<s.length;i++){ if(!best[i]) continue;
+    for(let j=i+1;j<=s.length;j++){ const w = s.slice(i,j); if(VOCAB.has(w) && (!best[j] || best[j].length > best[i].length+1)) best[j] = [...best[i], w]; } }
+  return best[s.length];
+}
+function retok(toks){
+  const out = []; let i = 0;
+  while(i < toks.length){
+    let done = false;
+    for(let w=Math.min(3, toks.length-i); w>=1; w--){
+      const seg = segment(toks.slice(i,i+w).join(''));
+      if(seg && seg.length){ out.push(...seg); i += w; done = true; break; }
+    }
+    if(!done){ out.push(toks[i]); i++; }
+  }
+  return out;
+}
 function lev1(a,b){ // klopt de afstand ten hoogste 1?
   if(Math.abs(a.length-b.length)>1) return false;
   let i=0,j=0,d=0; while(i<a.length && j<b.length){ if(a[i]===b[j]){i++;j++;continue;} if(++d>1) return false; if(a.length>b.length) i++; else if(b.length>a.length) j++; else {i++;j++;} }
@@ -1270,7 +1291,7 @@ function parseUtterance(u, toks, isFinal, pendingId){
   return acts;
 }
 function onSpeech(key, text, isFinal, conf){
-  const toks = norm(text).split(' ').filter(Boolean);
+  const toks = retok(norm(text).split(' ').filter(Boolean));
   if(!toks.length) return;
   $('heard').textContent = text.trim();
   let u = SPEECH.utt.get(key);
