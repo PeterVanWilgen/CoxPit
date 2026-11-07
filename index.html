@@ -416,15 +416,16 @@ function issue(id, side, at, meta){
     execute(id, side, phrase, null, meta);
   }
 }
-function fireExec(at, heardWord, meta){
+function fireExec(at, heardWord, meta, rawWord){
   if(!pending) return;
   ensureAudio();
   const p = pending; pending = null;
   p.execAt = at || momentNow();
   const want = COMMANDS.find(c=>c.id===p.id).exec, word = LANG.exec[want];
   const extra = [];
-  if(heardWord && heardWord!==want) extra.push({k:'warn', m:`Uitvoeringswoord hoort ‘${word}’ te zijn, niet ‘${LANG.exec[heardWord]||heardWord}’`});
-  execute(p.id, p.side, `${p.phrase} … ${word}`, p, meta || p.meta, extra);
+  if(heardWord && heardWord!==want) extra.push({k:'warn', m:`Uitvoeringswoord hoort ‘${word}’ te zijn, niet ‘${rawWord||LANG.exec[heardWord]||heardWord}’`});
+  const said = (heardWord===want && rawWord && rawWord.startsWith('go')) ? 'go' : word;
+  execute(p.id, p.side, `${p.phrase} … ${said}`, p, meta || p.meta, extra);
   renderCmdHighlight(); updateExec();
 }
 function cancelPending(){
@@ -1152,7 +1153,9 @@ const SYN = [ // extra uitspraakvormen; horen bij het taalpakket
   {id:'RONDMAKEN', side:'BB', text:'rondmaken over bakboord'},
   {id:'RONDMAKEN', side:'SB', text:'rondmaken over stuurboord'},
 ];
-const EXEC_TOK = {nu:'NU', nou:'NU', af:'AF', aff:'AF', go:'AF', lopen:'LOPEN'};
+const EXEC_TOK = {nu:'NU', nou:'NU', af:'AF', aff:'AF', go:'AF', goo:'AF', lopen:'LOPEN'};
+// Kleine woorden die de herkenning vaak verandert of weglaat ("klapje aan stuurboord"): tellen niet mee.
+const OPTIONAL = new Set(['op','aan','het','de']);
 const SIDE_TOK = new Set(['bakboord','stuurboord','beide','boorden']);
 const FILLERS = new Set(['eh','eeh','ehh','uh','uhm','ehm','hm','euh']);
 const norm = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim();
@@ -1192,14 +1195,17 @@ const tokEq = (a,b)=> a===b || (a.length>=5 && b.length>=5 && lev1(a,b));
 function matchPhrase(toks){
   let best=null;
   for(const p of PHRASES){
-    let j=0, hit=0, end=0, sidesOk=true, first=-1;
+    let j=0, hit=0, end=0, sidesOk=true, first=-1, need=0;
     for(const t of p.toks){
+      const opt = OPTIONAL.has(t) && p.toks.length>1;
+      if(!opt) need++;
       let k=j; while(k<toks.length && !tokEq(toks[k],t)) k++;
-      if(k<toks.length){ hit++; if(first<0) first=k; j=k+1; end=j; } else if(SIDE_TOK.has(t)) sidesOk=false;
+      if(k<toks.length){ if(!opt) hit++; if(first<0) first=k; j=k+1; end=j; }
+      else if(SIDE_TOK.has(t)) sidesOk=false;
     }
     if(!sidesOk || !hit) continue;
-    const score = hit/p.toks.length;
-    if(score < (p.toks.length<=2 ? 1 : 0.75)) continue;
+    const score = hit/need;
+    if(score < (need<=2 ? 1 : 0.75)) continue;
     const cand = {p, score, end, first};
     if(!best || better(cand, best)) best = cand;
   }
@@ -1268,7 +1274,7 @@ function parseUtterance(u, toks, isFinal, pendingId){
     if(u.open){
       const k = rest.findIndex(t=>EXEC_TOK[t]);
       const m = matchPhrase(rest);
-      if(k>=0 && (!m || m.first > k)){ acts.push({type:'exec', word:EXEC_TOK[rest[k]]}); u.pos += k+1; u.open = null; pendingId = null; continue; }
+      if(k>=0 && (!m || m.first > k)){ acts.push({type:'exec', word:EXEC_TOK[rest[k]], raw:rest[k]}); u.pos += k+1; u.open = null; pendingId = null; continue; }
       if(!(m && m.score===1)) break;
       u.open = null; // een nieuw commando vervangt de aankondiging
     }
@@ -1284,7 +1290,7 @@ function parseUtterance(u, toks, isFinal, pendingId){
     }
     if(pendingId){
       const k = rest.findIndex(t=>EXEC_TOK[t]);
-      if(k>=0 && k<=2){ acts.push({type:'exec', word:EXEC_TOK[rest[k]]}); u.pos += k+1; pendingId = null; continue; }
+      if(k>=0 && k<=2){ acts.push({type:'exec', word:EXEC_TOK[rest[k]], raw:rest[k]}); u.pos += k+1; pendingId = null; continue; }
     }
     break;
   }
@@ -1305,7 +1311,7 @@ function onSpeech(key, text, isFinal, conf){
       voice = voiceScore(u.start, toks);
       issue(a.id, a.side, st, {tech, voice});
     } else {
-      fireExec(latestOnsetAfter(u.start), a.word, {tech, voice});
+      fireExec(latestOnsetAfter(u.start), a.word, {tech, voice}, a.raw);
     }
   }
   showCert(tech, voice);
