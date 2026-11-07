@@ -150,7 +150,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
 
 <div class="app">
   <header class="bar">
-    <div class="brand"><span class="mark">Coxpit</span><span class="ver" id="ver">v0.3.8</span></div>
+    <div class="brand"><span class="mark">Coxpit</span><span class="ver" id="ver">v0.3.9</span></div>
     <div class="meta">C4x+ · perfecte ploeg · stilstaand water · spraak in Chrome of Edge</div>
     <div class="bar-actions">
       <button class="btn" id="btnPause" type="button">Pauze <kbd>P</kbd></button>
@@ -249,7 +249,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
 'use strict';
 
 /* ---------------- Commando's als data, los van de woorden ---------------- */
-const VERSION = '0.3.8';
+const VERSION = '0.3.9';
 const SIDE_NAME = {BB:'bakboord', SB:'stuurboord', beide:'beide boorden'};
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 const COMMANDS = [
@@ -678,7 +678,8 @@ function sideForce(sd, u){
       return (ph>=0.5 && ph<0.95) ? 0.6*P.Fpeak*Math.sin(Math.PI*(ph-0.5)/0.45) : 0;
     }
     if(m==='strijken'){
-      if(crew.strijk[sd]) return ph<0.45 ? -0.6*P.Fpeak*Math.sin(Math.PI*ph/0.45) : 0;
+      // rustig strijken op ~10 halen/min: korte, lichte halen; de boot komt op zo'n 1 m/s achteruit
+      if(crew.strijk[sd]) return ph<0.45 ? -0.1*P.Fpeak*Math.sin(Math.PI*ph/0.45) : 0;
       return -P.kFlat*u*Math.abs(u);
     }
   }
