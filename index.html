@@ -148,7 +148,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
 
 <div class="app">
   <header class="bar">
-    <div class="brand"><span class="mark">Coxpit</span><span class="ver" id="ver">v0.3</span></div>
+    <div class="brand"><span class="mark">Coxpit</span><span class="ver" id="ver">v0.3.1</span></div>
     <div class="meta">C4x+ · perfecte ploeg · stilstaand water · spraak in Chrome of Edge</div>
     <div class="bar-actions">
       <button class="btn" id="btnPause" type="button">Pauze <kbd>P</kbd></button>
@@ -246,7 +246,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
 'use strict';
 
 /* ---------------- Commando's als data, los van de woorden ---------------- */
-const VERSION = '0.3';
+const VERSION = '0.3.1';
 const SIDE_NAME = {BB:'bakboord', SB:'stuurboord', beide:'beide boorden'};
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 const COMMANDS = [
@@ -891,7 +891,7 @@ function drawBoat(){
       // blad
       const ang = Math.atan2(b.y-ly, b.x-lx);
       ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(ang);
-      const bw = p.squared ? (p.half?0.13:0.19) : 0.07;
+      const bw = p.squared ? (p.half?0.13:0.06) : 0.19; // van boven: dwars in het water is een streep, plat is het hele blad
       ctx.globalAlpha = p.raised ? 0.75 : 1;
       ctx.fillStyle=COL.blade; ctx.fillRect(-0.48,-bw/2,0.5,bw);
       ctx.fillStyle=COL.bladeTip; ctx.fillRect(-0.06,-bw/2,0.08,bw);
@@ -956,26 +956,38 @@ function drawHUD(){
   });
   // roerstand (alleen voor de instructeur)
   if(S.showRud){
-    // Gezien van boven, boeg omhoog: het hek bovenin, het roer hangt aan het draaipunt en
-    // toont de echte stand. Roer BB = achterkant van het roerblad slaat naar links (bakboord) uit.
-    const R = 44, gx = W/2, py = H - R - 44, d = boat.delta;
-    const lim = Math.max(S.rudMax, 30)*DEG + 6*DEG;
-    ctx.fillStyle='rgba(12,24,28,.72)'; roundRect(ctx, gx-R-34, py-30, 2*R+68, R+70, 6); ctx.fill();
-    // hek van de boot
-    ctx.fillStyle='#f3f1ea'; ctx.strokeStyle='rgba(80,90,92,.9)'; ctx.lineWidth=1.2;
-    ctx.beginPath(); ctx.moveTo(gx-15, py-30); ctx.lineTo(gx+15, py-30); ctx.quadraticCurveTo(gx+13, py-6, gx+5, py); ctx.lineTo(gx-5, py); ctx.quadraticCurveTo(gx-13, py-6, gx-15, py-30); ctx.closePath(); ctx.fill(); ctx.stroke();
-    // schaal onder het draaipunt
-    const at = a => Math.PI/2 + a; // canvashoek: recht naar beneden = midden, +roer (BB) naar links
-    ctx.strokeStyle='rgba(220,236,238,.45)'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(gx, py, R+6, at(-lim), at(lim)); ctx.stroke();
-    for(const dg of [-30,-15,0,15,30]){ const a=at(dg*DEG), big=Math.abs(dg)===30; ctx.strokeStyle= big?'rgba(236,123,112,.95)':'rgba(220,236,238,.55)'; ctx.lineWidth= big?2.5:1.5; ctx.beginPath(); ctx.moveTo(gx+Math.cos(a)*(R+1), py+Math.sin(a)*(R+1)); ctx.lineTo(gx+Math.cos(a)*(R+11), py+Math.sin(a)*(R+11)); ctx.stroke(); }
-    ctx.font='600 12px "Barlow Condensed", "Arial Narrow", sans-serif'; ctx.fillStyle='rgba(205,225,228,.85)'; ctx.textAlign='center';
-    ctx.fillText('BB', gx-R-20, py+10); ctx.fillText('SB', gx+R+20, py+10);
+    // Het roer hangt aan het hek van de boot zelf en draait mee; de uitslag is vergroot maar de hoek is echt.
+    // Roer BB = achterkant van het roerblad slaat naar bakboord uit.
+    const c = Math.cos(boat.psi), s = Math.sin(boat.psi);
+    const loc = (lx,ly)=> screenOf(boat.x + lx*c - ly*s, boat.y + lx*s + ly*c);
+    const pv = loc(-5.45,0), aft = loc(-6.45,0), port = loc(-5.45,1);
+    const base = Math.atan2(aft.y-pv.y, aft.x-pv.x);
+    let dp = Math.atan2(port.y-pv.y, port.x-pv.x) - base; dp = Math.atan2(Math.sin(dp), Math.cos(dp));
+    const sg = Math.sign(dp) || 1, at = a => base + sg*a;
+    const R = 38, d = boat.delta, lim = Math.max(S.rudMax, 30)*DEG;
+    const rp = (a, r)=> ({x: pv.x + Math.cos(at(a))*r, y: pv.y + Math.sin(at(a))*r});
+    // schaal
+    ctx.lineCap='round';
+    for(const [col,w] of [['rgba(12,24,28,.55)',5],['rgba(235,244,245,.85)',2]]){
+      ctx.strokeStyle=col; ctx.lineWidth=w; ctx.beginPath();
+      for(let k=0;k<=24;k++){ const q = rp(-lim + 2*lim*k/24, R+6); k?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y); } ctx.stroke();
+    }
+    for(const dg of [-30,-15,0,15,30]){ const big = Math.abs(dg)===30, a = dg*DEG, q0 = rp(a, R+2), q1 = rp(a, R+(big?14:11));
+      ctx.strokeStyle='rgba(12,24,28,.55)'; ctx.lineWidth=big?5:4; ctx.beginPath(); ctx.moveTo(q0.x,q0.y); ctx.lineTo(q1.x,q1.y); ctx.stroke();
+      ctx.strokeStyle= big ? '#ec7b70' : 'rgba(235,244,245,.9)'; ctx.lineWidth=big?2.5:1.5; ctx.beginPath(); ctx.moveTo(q0.x,q0.y); ctx.lineTo(q1.x,q1.y); ctx.stroke(); }
     // roerblad
-    const tx = gx + Math.cos(at(d))*R, ty = py + Math.sin(at(d))*R;
-    ctx.strokeStyle='#f2c230'; ctx.lineWidth=7; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(gx,py); ctx.lineTo(tx,ty); ctx.stroke(); ctx.lineCap='butt';
-    ctx.fillStyle='#2b2f31'; ctx.beginPath(); ctx.arc(gx, py, 3.2, 0, 7); ctx.fill();
-    ctx.font='600 13px "Barlow Condensed", "Arial Narrow", sans-serif'; ctx.fillStyle='#eef6f7';
-    ctx.fillText(`roer ${Math.abs(d/DEG).toFixed(0)}° ${d>0.5*DEG?'BB':d<-0.5*DEG?'SB':''}`, gx, py+R+30); ctx.textAlign='left';
+    const tip = rp(d, R);
+    ctx.strokeStyle='rgba(12,24,28,.7)'; ctx.lineWidth=8; ctx.beginPath(); ctx.moveTo(pv.x,pv.y); ctx.lineTo(tip.x,tip.y); ctx.stroke();
+    ctx.strokeStyle='#f2c230'; ctx.lineWidth=5; ctx.beginPath(); ctx.moveTo(pv.x,pv.y); ctx.lineTo(tip.x,tip.y); ctx.stroke();
+    ctx.lineCap='butt';
+    ctx.fillStyle='#2b2f31'; ctx.beginPath(); ctx.arc(pv.x, pv.y, 3, 0, 7); ctx.fill();
+    // BB/SB en de hoek
+    ctx.font='600 12px "Barlow Condensed", "Arial Narrow", sans-serif'; ctx.textAlign='center';
+    const tag = (q,t,fg)=>{ const w=ctx.measureText(t).width+8; ctx.fillStyle='rgba(12,24,28,.7)'; roundRect(ctx,q.x-w/2,q.y-8,w,16,4); ctx.fill(); ctx.fillStyle=fg; ctx.fillText(t,q.x,q.y+4); };
+    tag(rp(lim+14*DEG, R+10), 'BB', 'rgba(220,236,238,.9)'); tag(rp(-lim-14*DEG, R+10), 'SB', 'rgba(220,236,238,.9)');
+    ctx.font='600 13px "Barlow Condensed", "Arial Narrow", sans-serif';
+    tag(rp(0, R+30), `roer ${Math.abs(d/DEG).toFixed(0)}° ${d>0.5*DEG?'BB':d<-0.5*DEG?'SB':''}`.trim(), '#eef6f7');
+    ctx.textAlign='left';
   }
   // labels in de wereld
   ctx.font='600 13px "Barlow Condensed", "Arial Narrow", sans-serif'; ctx.textAlign='center';
@@ -1324,11 +1336,13 @@ function bookTip(toks, c, id, side){
   const book = keys(norm(LANG.say[id](side)).split(' '));
   const okExec = !cmd.exec || !c.exec || (c.exec.word==='LOPEN') === (cmd.exec==='LOPEN'); // nu, af en go zijn gelijkwaardig
   if(said===book && okExec) return null;
-  return `Boekje: ‘${LANG.say[id](side)}${cmd.exec ? ' … '+LANG.exec[cmd.exec] : ''}’`;
+  const heard = toks.slice(c.start, c.end+1).filter(t=>!FILLERS.has(t) && !EXEC_TOK[t]).join(' ') + (c.exec ? ' '+c.exec.raw : '');
+  return `Boekje: ‘${LANG.say[id](side)}${cmd.exec ? ' … '+LANG.exec[cmd.exec] : ''}’ (gezegd: ‘${heard}’)`;
 }
-const SPEECH = {on:false, rec:null, stream:null, ctx:null, an:null, buf:null, floor:0.003, inSpeech:false, lastLoud:0, onsets:[], sess:0, utt:new Map()};
+const SPEECH = {on:false, rec:null, stream:null, ctx:null, an:null, buf:null, floor:0.003, inSpeech:false, lastLoud:0, onsets:[], sess:0, st:null};
 function micNote(msg, kind){ const el=$('micNote'); el.textContent=msg; el.className='note'+(kind?' '+kind:''); }
 function speechPoll(){
+  speechHoldCheck();
   if(!SPEECH.an) return;
   SPEECH.an.getFloatTimeDomainData(SPEECH.buf);
   let s=0; for(let i=0;i<SPEECH.buf.length;i++) s+=SPEECH.buf[i]*SPEECH.buf[i];
@@ -1374,53 +1388,73 @@ function showCert(tech, voice){
 /* Eén uiting kan meerdere commando's bevatten ("slagklaar maken … slagklaar … af").
    u.pos onthoudt tot waar al verwerkt is, zodat een tussentijdse en een definitieve herkenning niets dubbel uitvoeren.
    Een stuk wordt pas uitgevoerd als het af is: er volgt een uitvoeringswoord of een volgend commando, of de herkenning is definitief. */
-function parseUtterance(u, toks, isFinal, pendingId){
-  const acts = [];
+function parseUtterance(u, toks, isFinal, pendingId, force){
+  const acts = []; u.hold = null;
   for(const c of chunkToks(toks, u.pos)){
     if(c.open && !isFinal) break;
+    const cmd = c.id ? COMMANDS.find(x=>x.id===c.id) : null;
+    // Een commando met een kant maar nog zonder kant aan het eind van een zin: even wachten,
+    // de kant komt soms als los stukje achteraan ("riemen hoog … stuurboord").
+    if(c.open && !force && cmd && cmd.sides && !c.side && !c.exec){ u.hold = performance.now(); break; }
     u.pos = c.end + 1;
-    if(c.execOnly){ if(pendingId){ acts.push({type:'exec', word:c.execOnly.word, raw:c.execOnly.raw}); pendingId = null; } continue; }
-    if(!c.id) continue;
-    const cmd = COMMANDS.find(x=>x.id===c.id);
+    const rng = [c.start, c.end];
+    if(c.execOnly){ if(pendingId){ acts.push({type:'exec', word:c.execOnly.word, raw:c.execOnly.raw, rng}); pendingId = null; } continue; }
+    if(!cmd) continue;
     const side = cmd.sides ? sideOK(c.id, SIDE_OF[c.side]) : null;
-    if(cmd.sides && !side){ acts.push({type:'noside', id:c.id}); continue; }
-    acts.push({type:'issue', id:c.id, side, tip: bookTip(toks, c, c.id, side)});
+    if(cmd.sides && !side){ acts.push({type:'noside', id:c.id, rng}); continue; }
+    acts.push({type:'issue', id:c.id, side, tip: bookTip(toks, c, c.id, side), rng});
     pendingId = cmd.exec ? c.id : null;
-    if(c.exec){ if(cmd.exec){ acts.push({type:'exec', word:c.exec.word, raw:c.exec.raw}); pendingId = null; } }
+    if(c.exec){ if(cmd.exec){ acts.push({type:'exec', word:c.exec.word, raw:c.exec.raw, rng}); pendingId = null; } }
   }
   return acts;
 }
-function onSpeech(key, text, isFinal, conf){
-  const toks = retok(norm(text).split(' ').filter(Boolean));
+/* Chrome nummert zijn resultaten tijdens het spreken soms opnieuw. Daarom werken we op de hele tekst
+   van de sessie (alle resultaten achter elkaar) en onthouden we één positie tot waar alles verwerkt is. */
+const newSpeechState = ()=> ({pos:0, start:null, hold:null, covered:new Set(), reported:new Set(), parts:null});
+function onSpeech(parts, force){
+  const st = SPEECH.st; st.parts = parts;
+  const toks = [], ranges = [];
+  for(const pt of parts){ const t = retok(norm(pt.text).split(' ').filter(Boolean)); ranges.push([toks.length, toks.length+t.length]); toks.push(...t); }
   if(!toks.length) return;
-  $('heard').textContent = text.trim();
-  let u = SPEECH.utt.get(key);
-  if(!u){ u = {pos:0, open:null, start:null}; SPEECH.utt.set(key,u); if(SPEECH.utt.size>60) SPEECH.utt.delete(SPEECH.utt.keys().next().value); }
-  const tech = isFinal ? (conf>0 ? conf : null) : null;
-  const acts = parseUtterance(u, toks, isFinal, pending ? pending.id : null);
-  let voice = voiceScore(u.start, toks);
+  const last = parts[parts.length-1], allFinal = !!last.final;
+  const shown = [...parts].reverse().find(pt=>pt.text.trim()); if(shown) $('heard').textContent = shown.text.trim();
+  const tech = allFinal ? (last.conf>0 ? last.conf : null) : null;
+  const posBefore = st.pos;
+  const acts = parseUtterance(st, toks, allFinal, pending ? pending.id : null, force);
+  let voice = voiceScore(st.start, toks.slice(posBefore));
   for(const a of acts){
+    for(let i=a.rng[0]; i<=a.rng[1]; i++) st.covered.add(i);
     if(a.type==='issue'){
-      const st = takeStartOnset(); if(st) u.start = st;
-      voice = voiceScore(u.start, toks);
-      issue(a.id, a.side, st, {tech, voice, tip:a.tip});
+      const on = takeStartOnset(); if(on) st.start = on;
+      voice = voiceScore(st.start, toks.slice(a.rng[0], a.rng[1]+1));
+      issue(a.id, a.side, on, {tech, voice, tip:a.tip});
     } else if(a.type==='noside'){
       sysLog(`‘${LANG.row[a.id].replace(/ … nu$/,'').replace(/ (op|aan|over)$/,'')}’ zonder kant: de ploeg weet niet welk boord`, 'warn');
     } else {
-      fireExec(latestOnsetAfter(u.start), a.word, {tech, voice}, a.raw);
+      fireExec(latestOnsetAfter(st.start), a.word, {tech, voice}, a.raw);
     }
   }
   showCert(tech, voice);
-  if(isFinal && acts.length===0 && u.pos===0) $('heard').textContent = `${text.trim()}  (geen commando herkend)`;
   // Wat gehoord maar niet herkend is, komt in het logboek: zo kan het taalpakket worden aangevuld.
-  if(acts.length) u.any = true;
-  if(isFinal && !u.any) sysLog(`Spraak niet herkend: “${text.trim()}”`, 'info');
-  if(isFinal && u.pos>0 && tech!=null && log[0] && !log[0].system){
+  parts.forEach((pt, j)=>{
+    const [r0, r1] = ranges[j];
+    if(!pt.final || st.reported.has(j) || r1===r0) return;
+    if(!(r1 <= st.pos || (allFinal && !st.hold))) return;
+    st.reported.add(j);
+    let hit = false; for(let i=r0;i<r1;i++) if(st.covered.has(i)) hit = true;
+    if(!hit && toks.slice(r0,r1).some(t=>!FILLERS.has(t))){
+      sysLog(`Spraak niet herkend: “${pt.text.trim()}”`, 'info');
+      if(j===parts.length-1) $('heard').textContent = `${pt.text.trim()}  (geen commando herkend)`;
+    }
+  });
+  if(allFinal && !acts.length && tech!=null && st.pos>posBefore-1 && log[0] && !log[0].system){
     // werk de zekerheid bij in het logboek zodra de definitieve herkenning binnen is
     const n = log[0].notes.find(n=>n.m.startsWith('Spraak:'));
-    if(n){ n.m = `Spraak: verstaan ${Math.round(tech*100)}%` + (voice!=null?` · uitspraak ${voiceWord(voice)}`:''); renderLog(); }
+    if(n && !n.m.includes('verstaan')){ n.m = `Spraak: verstaan ${Math.round(tech*100)}%` + (voice!=null?` · uitspraak ${voiceWord(voice)}`:''); renderLog(); }
   }
 }
+// Kwam er na een commando zonder kant niets meer, dan alsnog verwerken.
+function speechHoldCheck(){ const st = SPEECH.st; if(st && st.hold && performance.now() - st.hold > 2500 && st.parts) onSpeech(st.parts, true); }
 async function speechStart(){
   if(!SR){ micNote('Deze browser herkent geen spraak. Gebruik Chrome of Edge op een laptop.', 'bad'); return; }
   if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ micNote('Geen toegang tot de microfoon in deze weergave. Open het bestand coxpit.html in Chrome of Edge.', 'bad'); return; }
@@ -1434,13 +1468,14 @@ async function speechStart(){
   }catch(e){ SPEECH.an = null; }
   const rec = new SR();
   rec.lang = 'nl-NL'; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
-  rec.onresult = ev => { for(let i=ev.resultIndex;i<ev.results.length;i++){ const r = ev.results[i]; onSpeech(`${SPEECH.sess}:${i}`, r[0].transcript, r.isFinal, r[0].confidence); } };
+  SPEECH.st = newSpeechState();
+  rec.onresult = ev => { const parts = []; for(let i=0;i<ev.results.length;i++){ const r = ev.results[i]; parts.push({text:r[0].transcript, final:r.isFinal, conf:r[0].confidence}); } onSpeech(parts); };
   rec.onerror = ev => {
     if(ev.error==='not-allowed' || ev.error==='service-not-allowed'){ micNote('Spraakherkenning is geweigerd. Sta de microfoon toe en zet spraak opnieuw aan.', 'bad'); speechStop(); }
     else if(ev.error==='network'){ micNote('De spraakdienst is niet bereikbaar. Controleer de internetverbinding.', 'bad'); }
     else if(ev.error==='language-not-supported'){ micNote('Nederlandse spraakherkenning wordt in deze browser niet ondersteund.', 'bad'); speechStop(); }
   };
-  rec.onend = ()=>{ if(SPEECH.on){ SPEECH.sess++; try{ rec.start(); }catch(e){} } };
+  rec.onend = ()=>{ if(SPEECH.st && SPEECH.st.hold && SPEECH.st.parts) onSpeech(SPEECH.st.parts, true); if(SPEECH.on){ SPEECH.sess++; SPEECH.st = newSpeechState(); try{ rec.start(); }catch(e){} } };
   SPEECH.rec = rec; SPEECH.on = true;
   try{ rec.start(); }catch(e){}
   $('btnMic').classList.add('on'); $('micLabel').textContent = 'Spraak uit';
