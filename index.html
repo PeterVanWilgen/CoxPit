@@ -150,7 +150,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
 
 <div class="app">
   <header class="bar">
-    <div class="brand"><span class="mark">Coxpit</span><span class="ver" id="ver">v0.3.9</span></div>
+    <div class="brand"><span class="mark">Coxpit</span><span class="ver" id="ver">v0.4</span></div>
     <div class="meta">C4x+ · perfecte ploeg · stilstaand water · spraak in Chrome of Edge</div>
     <div class="bar-actions">
       <button class="btn" id="btnPause" type="button">Pauze <kbd>P</kbd></button>
@@ -249,7 +249,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
 'use strict';
 
 /* ---------------- Commando's als data, los van de woorden ---------------- */
-const VERSION = '0.3.9';
+const VERSION = '0.4';
 const SIDE_NAME = {BB:'bakboord', SB:'stuurboord', beide:'beide boorden'};
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 const COMMANDS = [
@@ -357,8 +357,9 @@ const saveS = ()=>{ try{ localStorage.setItem('coxpit-v0-settings', JSON.stringi
 let boat, crew, keys, simT, paused, pending, log, samples, events, stats, tasks, puddles, wake, lastSaid;
 function resetAll(){
   boat = {x:START.x, y:START.y, psi:START.psi, u:0, v:0, r:0, delta:0};
-  crew = {mode:'vlot', push:null, readyT:0, squareT:0, goWaiting:false, messy:false, messyT:0, rate:S.rate, rateTarget:S.rate, phase:0, side:{BB:'plat', SB:'plat'}, press:{BB:1,SB:1}, pwr:'medium', stopAtFinish:false,
+  crew = {mode:'vlot', push:null, goWaiting:false, messy:false, messyT:0, rate:S.rate, rateTarget:S.rate, phase:0, side:{BB:'plat', SB:'plat'}, press:{BB:1,SB:1}, pwr:'medium', stopAtFinish:false,
           ready:null, rondSide:null, strijk:{BB:false,SB:false}, klapjeSide:null, klapjeT:0};
+  if(typeof OD!=='undefined' && OD.BB) resetOars();
   keys = {BB:false, SB:false};
   simT = 0; paused = false; pending = null;
   log = []; samples = []; events = []; puddles = []; wake = [];
@@ -403,9 +404,10 @@ const circDist = (a,b)=> { let d=Math.abs(a-b)%1; return Math.min(d,1-d); };
 const PWR = {light:0.45, medium:1, strong:1.2}; // kracht per haal t.o.v. medium
 const where = ph => ph < P.df ? 'in de haal' : 'in de recover';
 const rowingModes = new Set(['roeien','rond','strijken']);
-const MAKEN_T = 2.5, KLAAR_T = 0.7; // s: oprijden naar slagklaar; bladen dwars in het water zetten
-const makenDone = ()=> crew.mode==='slagklaar' && crew.readyT >= MAKEN_T;
-const klaarDone = ()=> makenDone() && crew.ready==='klaar' && crew.squareT >= KLAAR_T;
+// Slagklaar is klaar als de riemen echt bij de inpik zijn en (na 'slagklaar') de bladen echt dwars staan.
+const activeSides = ()=> ['BB','SB'].filter(sd=> crew.side[sd]!=='hoog');
+const makenDone = ()=> crew.mode==='slagklaar' && activeSides().every(sd=> Math.abs(OD[sd].th - TH_C) < 2*DEG && OD[sd].slide > 0.95);
+const klaarDone = ()=> makenDone() && crew.ready==='klaar' && activeSides().every(sd=> OD[sd].sq > 0.95);
 function startRowing(){
   crew.mode='roeien'; crew.phase=0; crew.stopAtFinish=false; crew.ready=null; crew.goWaiting=false;
   for(const sd of ['BB','SB']) if(crew.side[sd]!=='hoog') crew.side[sd]='roei';
@@ -440,7 +442,7 @@ function issue(id, side, at, meta){
     pending = {id, side, phrase, t:m.t, phase:m.phase, wasRowing:m.wasRowing, meta};
     if(id==='SLAGKLAAR' && crew.mode==='slagklaar'){
       if(!makenDone()) sysLog('‘Slagklaar’ terwijl de ploeg nog oprijdt: wacht tot iedereen vooraan zit', 'warn');
-      crew.ready='klaar'; crew.squareT = 0; // bladen dwars in het water, zodra de ploeg vooraan zit
+      crew.ready='klaar'; // bladen dwars in het water, zodra de ploeg vooraan zit
     }
     lastSaid = {text: phrase+' …', t:simT, pending:true};
     events.push({t:simT, label: phrase+' …', kind:'cmd'});
@@ -498,7 +500,7 @@ function execute(id, side, phrase, pend, meta, extraNotes){
     case 'SLAGKLAAR_MAKEN':
       if(isRowing()){ warn('De ploeg roeit al'); break; }
       if(crew.mode==='vlot') warn('Je ligt nog aan het vlot; eerst uitzetten');
-      crew.mode='slagklaar'; crew.ready='maken'; crew.readyT=0; crew.squareT=0; crew.goWaiting=false; setSides('plat'); crew.phase=0;
+      crew.mode='slagklaar'; crew.ready='maken'; crew.goWaiting=false; setSides('plat'); crew.phase=0;
       break;
     case 'SLAGKLAAR': {
       if(isRowing()){ warn('De ploeg roeit al'); break; }
@@ -639,8 +641,6 @@ function crewUpdate(h){
     if(c.mode==='rond' && prev < 0.95 && c.phase >= 0.95) dropPuddles();
     if(c.phase >= 1){ c.phase -= 1; onCatch(); }
   } else if(c.mode==='slagklaar'){
-    c.readyT += h;
-    if(c.ready==='klaar' && c.readyT >= MAKEN_T) c.squareT += h;
     if(c.goWaiting && klaarDone()){
       const messy = c.messy; c.messy = false; startRowing();
       if(messy){ c.press.BB = 0.5; c.press.SB = 1; c.messyT = 1.6; } // eerste haal niet gelijk: boot slingert
@@ -690,11 +690,11 @@ function sideForce(sd, u){
 function oarPose(sd){
   const c = crew, ph = c.phase, st = c.side[sd];
   const R = {th:0, inWater:true, squared:false, raised:false, slide:0.4};
-  if(st==='hoog'){ R.raised=true; R.inWater=false; R.slide=0.3; return R; }
-  if(st==='houden'){ R.squared=true; R.slide=0; return R; }
-  if(st==='vast'){ R.squared=true; R.half=true; R.slide=0; return R; }
+  if(st==='hoog'){ R.raised=true; R.inWater=false; R.keep=true; R.keepSlide=true; return R; }
+  if(st==='houden'){ R.squared=true; R.keep=true; R.keepSlide=true; return R; }   // blad dwars waar het is
+  if(st==='vast'){ R.squared=true; R.half=true; R.keep=true; R.keepSlide=true; return R; }
   if(st==='uit'){ R.th=TH_F; R.inWater=false; R.slide=0; return R; }
-  if(c.mode==='slagklaar'){ const q = ease(Math.min(1, c.readyT/MAKEN_T)); R.th=lerp(0,TH_C,q); R.slide=q; R.squared = c.ready==='klaar' && c.squareT >= KLAAR_T*0.5; R.inWater = q>0.95; return R; }
+  if(c.mode==='slagklaar'){ R.th=TH_C; R.slide=1; R.squared = c.ready==='klaar'; R.inWater = true; return R; }
   if(c.mode==='klapje'){ if(sd===c.klapjeSide){ const q=ease(c.klapjeT/1.3); R.th=lerp(30*DEG,-25*DEG,q); R.squared=true; R.slide=0; } return R; }
   if(st==='roei'){
     if(c.mode==='roeien'){
@@ -721,6 +721,29 @@ function oarPose(sd){
   }
   return R; // plat
 }
+/* Wat je ziet: de riemen bewegen naar de doelstand, nooit sprongsgewijs. Buiten het ritme van het roeien
+   duurt elke helft een seconde: rust (dwars) ↔ inpik 1 s, uitpik ↔ rust 1 s. Bladen draaien in 0,4 s. */
+const OD = {};
+function resetOars(){ for(const sd of ['BB','SB']) OD[sd] = {th:0, slide:0.4, sq:0, raised:false, inWater:true}; }
+resetOars();
+function updateOars(h){
+  for(const sd of ['BB','SB']){
+    const t = oarPose(sd), d = OD[sd];
+    const rhythm = (crew.side[sd]==='roei' && rowingModes.has(crew.mode)) || (crew.mode==='klapje' && sd===crew.klapjeSide);
+    const thT = t.keep ? d.th : t.th;
+    const pos = d.th > 1e-4 || (Math.abs(d.th) <= 1e-4 && thT > 0);
+    const vth = rhythm ? 250*DEG : (pos ? TH_C : -TH_F); // rad/s: één helft per seconde
+    d.th += Math.max(-vth*h, Math.min(vth*h, thT - d.th));
+    const sT = t.keepSlide ? d.slide : t.slide, vs = rhythm ? 6 : 1;
+    d.slide += Math.max(-vs*h, Math.min(vs*h, sT - d.slide));
+    let qT = t.squared ? (t.half ? 0.5 : 1) : 0;
+    if(crew.mode==='slagklaar' && Math.abs(d.th - TH_C) > 3*DEG) qT = 0; // pas dwars als het blad bij de inpik is
+    const vq = rhythm ? 8 : 2.5;
+    d.sq += Math.max(-vq*h, Math.min(vq*h, qT - d.sq));
+    d.raised = t.raised; d.inWater = t.inWater;
+  }
+}
+const oarDisp = sd => { const d = OD[sd]; return {th:d.th, slide:d.slide, sq:d.sq, squared:d.sq>0.5, raised:d.raised, inWater:d.inWater}; };
 /* Bladpunt in bootcoördinaten (x naar de boeg, y naar bakboord) */
 function bladeBody(rx, sd, th, reach){
   const sgn = sd==='BB' ? 1 : -1, lx = rx - 0.35, len = OUTBOARD*(reach||1);
@@ -730,7 +753,7 @@ const toWorld = (bx,by)=>{ const c=Math.cos(boat.psi), s=Math.sin(boat.psi); ret
 
 function dropPuddles(){
   for(const sd of ['BB','SB']){
-    const p = oarPose(sd); if(!p.squared && crew.mode!=='klapje') continue;
+    const p = oarDisp(sd); if(!p.squared && crew.mode!=='klapje') continue;
     for(const rw of ROWERS){ const b = bladeBody(rw.x, sd, p.th); const w = toWorld(b.x,b.y); puddles.push({x:w.x, y:w.y, t:simT}); }
   }
   if(puddles.length>420) puddles.splice(0, puddles.length-420);
@@ -772,7 +795,7 @@ function step(h){
     if(Math.abs(nd) >= lim){ if(Math.abs(boat.delta) < lim-1e-6) sTok(); nd = Math.sign(nd)*lim; }
     boat.delta = nd;
   }
-  crewUpdate(h);
+  crewUpdate(h); updateOars(h);
 
   const {u,v,r} = boat;
   const Fbb = sideForce('BB',u), Fsb = sideForce('SB',u);
@@ -852,7 +875,7 @@ function step(h){
 function bladeChecks(){
   if(crew.mode==='vlot' || crew.mode==='rust') return;
   for(const sd of ['BB','SB']){
-    const p = oarPose(sd); if(p.raised || bladeCooldown[sd]>0) continue;
+    const p = oarDisp(sd); if(p.raised || bladeCooldown[sd]>0) continue;
     for(const rw of [ROWERS[0], ROWERS[3]]){
       const b = bladeBody(rw.x, sd, p.th); const w = toWorld(b.x,b.y);
       if(inVlot(w.x,w.y) || !isWater(w.x,w.y)){
@@ -972,7 +995,7 @@ function drawBoat(){
   ctx.fillStyle=COL.shadow; ctx.beginPath(); HULL.forEach(([x,y],i)=> i?ctx.lineTo(x+0.25,y-0.25):ctx.moveTo(x+0.25,y-0.25)); ctx.closePath(); ctx.fill();
   // riemen eerst (onder de romp)
   for(const sd of ['BB','SB']){
-    const p = oarPose(sd), sgn = sd==='BB'?1:-1;
+    const p = oarDisp(sd), sgn = sd==='BB'?1:-1;
     for(const rw of ROWERS){
       const lx = rw.x-0.35, ly = sgn*LOCK_Y;
       const reach = p.raised ? 0.82 : 1;
@@ -985,7 +1008,7 @@ function drawBoat(){
       // blad
       const ang = Math.atan2(b.y-ly, b.x-lx);
       ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(ang);
-      const bw = p.squared ? (p.half?0.13:0.06) : 0.19; // van boven: dwars in het water is een streep, plat is het hele blad
+      const bw = 0.19 + (0.06-0.19)*p.sq; // van boven: dwars in het water is een streep, plat is het hele blad
       ctx.globalAlpha = p.raised ? 0.75 : 1;
       ctx.fillStyle=COL.blade; ctx.fillRect(-0.48,-bw/2,0.5,bw);
       ctx.fillStyle=COL.bladeTip; ctx.fillRect(-0.06,-bw/2,0.08,bw);
@@ -1001,7 +1024,7 @@ function drawBoat(){
   // roer aan de spiegel
   ctx.save(); ctx.translate(-5.45,0); ctx.rotate(-boat.delta); ctx.fillStyle='#e9e6dc'; ctx.strokeStyle=COL.hullLine; ctx.lineWidth=0.03; ctx.fillRect(-0.42,-0.025,0.42,0.05); ctx.strokeRect(-0.42,-0.025,0.42,0.05); ctx.restore();
   // roeiers (kijken naar het hek)
-  const pBB = oarPose('BB'), pSB = oarPose('SB');
+  const pBB = oarDisp('BB'), pSB = oarDisp('SB');
   for(const rw of ROWERS){
     const slide = Math.max(pBB.slide, pSB.slide);
     const sx = rw.x + 0.25 - 0.5*slide;
