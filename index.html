@@ -148,7 +148,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
 
 <div class="app">
   <header class="bar">
-    <div class="brand"><span class="mark">Coxpit</span><span class="ver" id="ver">v0.2.1</span></div>
+    <div class="brand"><span class="mark">Coxpit</span><span class="ver" id="ver">v0.2.2</span></div>
     <div class="meta">C4x+ · perfecte ploeg · stilstaand water · spraak in Chrome of Edge</div>
     <div class="bar-actions">
       <button class="btn" id="btnPause" type="button">Pauze <kbd>P</kbd></button>
@@ -245,7 +245,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
 'use strict';
 
 /* ---------------- Commando's als data, los van de woorden ---------------- */
-const VERSION = '0.2.1';
+const VERSION = '0.2.2';
 const SIDE_NAME = {BB:'bakboord', SB:'stuurboord', beide:'beide boorden'};
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 const COMMANDS = [
@@ -1219,7 +1219,7 @@ const SYN = [ // extra uitspraakvormen; horen bij het taalpakket
 ];
 const EXEC_TOK = {nu:'NU', nou:'NU', af:'AF', aff:'AF', go:'AF', goo:'AF', lopen:'LOPEN'};
 // Kleine woorden die de herkenning vaak verandert of weglaat ("klapje aan stuurboord"): tellen niet mee.
-const OPTIONAL = new Set(['op','aan','het','de']);
+const OPTIONAL = new Set(['op','aan','het','de','over']);
 const SIDE_TOK = new Set(['bakboord','stuurboord','beide','boorden']);
 const FILLERS = new Set(['eh','eeh','ehh','uh','uhm','ehm','hm','euh']);
 const norm = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim();
@@ -1255,7 +1255,8 @@ function lev1(a,b){ // klopt de afstand ten hoogste 1?
   let i=0,j=0,d=0; while(i<a.length && j<b.length){ if(a[i]===b[j]){i++;j++;continue;} if(++d>1) return false; if(a.length>b.length) i++; else if(b.length>a.length) j++; else {i++;j++;} }
   return d + (a.length-i) + (b.length-j) <= 1;
 }
-const tokEq = (a,b)=> a===b || (a.length>=5 && b.length>=5 && lev1(a,b));
+// Gelijk bij ten hoogste één letter verschil, of als een afgekapt woord ("strijk", "rondmaak") het begin is van een roeiwoord.
+const tokEq = (a,b)=> a===b || (a.length>=5 && b.length>=5 && lev1(a,b)) || (a.length>=5 && b.length-a.length<=2 && b.startsWith(a));
 function matchPhrase(toks){
   let best=null;
   for(const p of PHRASES){
@@ -1383,6 +1384,8 @@ function onSpeech(key, text, isFinal, conf){
   }
   showCert(tech, voice);
   if(isFinal && acts.length===0 && u.pos===0) $('heard').textContent = `${text.trim()}  (geen commando herkend)`;
+  // Wat gehoord maar niet herkend is, komt in het logboek: zo kan het taalpakket worden aangevuld.
+  if(isFinal && toks.slice(u.pos).some(t=>!FILLERS.has(t) && !EXEC_TOK[t])) sysLog(`Spraak niet herkend: “${text.trim()}”${u.pos>0?` (rest na ‘${toks.slice(0,u.pos).join(' ')}’)`:''}`, 'info');
   if(isFinal && u.pos>0 && tech!=null && log[0] && !log[0].system){
     // werk de zekerheid bij in het logboek zodra de definitieve herkenning binnen is
     const n = log[0].notes.find(n=>n.m.startsWith('Spraak:'));
