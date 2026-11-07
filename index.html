@@ -150,7 +150,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
 
 <div class="app">
   <header class="bar">
-    <div class="brand"><span class="mark">Coxpit</span><span class="ver" id="ver">v0.3.7</span></div>
+    <div class="brand"><span class="mark">Coxpit</span><span class="ver" id="ver">v0.3.8</span></div>
     <div class="meta">C4x+ · perfecte ploeg · stilstaand water · spraak in Chrome of Edge</div>
     <div class="bar-actions">
       <button class="btn" id="btnPause" type="button">Pauze <kbd>P</kbd></button>
@@ -249,7 +249,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
 'use strict';
 
 /* ---------------- Commando's als data, los van de woorden ---------------- */
-const VERSION = '0.3.7';
+const VERSION = '0.3.8';
 const SIDE_NAME = {BB:'bakboord', SB:'stuurboord', beide:'beide boorden'};
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 const COMMANDS = [
@@ -1556,12 +1556,32 @@ function isRepeat(id, side){
   const o = peekStartOnset();
   return !(o && (!L.on || o.wall > L.on.wall + 250));
 }
-const newSpeechState = ()=> ({pos:0, start:null, hold:null, covered:new Set(), reported:new Set(), parts:null});
+const newSpeechState = ()=> ({pos:0, start:null, hold:null, covered:new Set(), reported:new Set(), shortSeen:new Set(), parts:null});
 function onSpeech(parts, force){
   const st = SPEECH.st; st.parts = parts;
   const toks = [], ranges = [];
   for(const pt of parts){ const t = retok(norm(pt.text).split(' ').filter(Boolean)); ranges.push([toks.length, toks.length+t.length]); toks.push(...t); }
-  if(!toks.length) return [];
+  /* Staat er een commando klaar en hoort de microfoon je stem, maar maakt de herkenning er niets of een
+     onbekend kort woord van ("bro", of leeg), dan was dat het uitvoeringswoord: dat is het enige wat de ploeg dan verwacht.
+     Vooral 'go' is kort en Engels en valt bij de Nederlandse herkenning vaak weg. */
+  const shortActs = [];
+  parts.forEach((pt, j)=>{
+    if(!pending || !pt.final || st.shortSeen.has(j)) return;
+    const [r0, r1] = ranges[j], tk = toks.slice(r0, r1).filter(t=>!FILLERS.has(t));
+    const unknownShort = tk.length===0 || (tk.length===1 && tk[0].length<=4 && !kwKey(tk[0]) && numOf(tk[0])==null);
+    if(!unknownShort) return;
+    if(r0 < st.pos){ st.shortSeen.add(j); return; }
+    st.shortSeen.add(j);
+    const on = latestOnsetAfter(st.start);
+    if(!on && SPEECH.an) return; // geen stem gehoord: geen uitvoeringswoord
+    const want = COMMANDS.find(c=>c.id===pending.id).exec;
+    const heardTxt = tk.length ? tk[0] : 'onverstaanbaar';
+    for(let i=r0;i<r1;i++) st.covered.add(i);
+    if(st.pos <= r0) st.pos = r1;
+    fireExec(on, want, {tech:null, voice:null, tip:`Uitvoeringswoord niet verstaan (${tk.length ? 'herkend als ‘'+heardTxt+'’' : 'niets uitgeschreven'}), wel je stem gehoord: op dat moment uitgevoerd`}, want==='AF' ? 'go' : null);
+    shortActs.push({type:'exec', word:want, raw:heardTxt, rng:[r0, Math.max(r0, r1-1)]});
+  });
+  if(!toks.length) return shortActs;
   const last = parts[parts.length-1], allFinal = !!last.final;
   const shown = [...parts].reverse().find(pt=>pt.text.trim()); if(shown) $('heard').textContent = shown.text.trim();
   const tech = allFinal ? (last.conf>0 ? last.conf : null) : null;
@@ -1610,7 +1630,7 @@ function onSpeech(parts, force){
     const n = log[0].notes.find(n=>n.m.startsWith('Spraak:'));
     if(n && !n.m.includes('verstaan')){ n.m = `Spraak: verstaan ${Math.round(tech*100)}%` + (voice!=null?` · uitspraak ${voiceWord(voice)}`:''); renderLog(); }
   }
-  return acts;
+  return shortActs.concat(acts);
 }
 // Kwam er na een commando zonder kant niets meer, dan alsnog verwerken.
 function speechHoldCheck(){ const st = SPEECH.st; if(st && st.hold && performance.now() - st.hold > 2500 && st.parts) onSpeech(st.parts, true); }
