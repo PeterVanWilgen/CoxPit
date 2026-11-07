@@ -148,7 +148,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
 
 <div class="app">
   <header class="bar">
-    <div class="brand"><span class="mark">Coxpit</span><span class="ver" id="ver">v0.2.2</span></div>
+    <div class="brand"><span class="mark">Coxpit</span><span class="ver" id="ver">v0.3</span></div>
     <div class="meta">C4x+ · perfecte ploeg · stilstaand water · spraak in Chrome of Edge</div>
     <div class="bar-actions">
       <button class="btn" id="btnPause" type="button">Pauze <kbd>P</kbd></button>
@@ -200,6 +200,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
           <div class="howto" style="margin-top:8px">
             <span>Klik een commando. Bij een tweedelig commando, zoals <b>Laat … lopen</b>, geef je het uitvoeringswoord met de grote knop of de spatiebalk. Het moment daarvan telt.</span>
             <span>Stuur met <kbd>←</kbd> (bakboord-touw) en <kbd>→</kbd> (stuurboord-touw). Ingedrukt houden beweegt het roer; loslaten houdt het vast. De roerstand zie je niet, net als in de boot.</span>
+            <span>Met spraak luistert de ploeg zoals roeiers dat doen: naar de handeling, de kant en het uitvoeringswoord. Volgorde en vulwoorden maken niet uit; <b>nu</b>, <b>af</b> en <b>go</b> zijn gelijkwaardig. Wijk je af van het boekje, dan voert de ploeg het toch uit en staat er een tip in het logboek.</span>
             <span><kbd>Esc</kbd> trekt een aangekondigd commando in. <kbd>P</kbd> pauzeert.</span>
           </div>
         </details>
@@ -245,7 +246,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
 'use strict';
 
 /* ---------------- Commando's als data, los van de woorden ---------------- */
-const VERSION = '0.2.2';
+const VERSION = '0.3';
 const SIDE_NAME = {BB:'bakboord', SB:'stuurboord', beide:'beide boorden'};
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 const COMMANDS = [
@@ -432,9 +433,13 @@ function fireExec(at, heardWord, meta, rawWord){
   p.execAt = at || momentNow();
   const want = COMMANDS.find(c=>c.id===p.id).exec, word = LANG.exec[want];
   const extra = [];
-  if(heardWord && heardWord!==want) extra.push({k:'warn', m:`Uitvoeringswoord hoort ‘${word}’ te zijn, niet ‘${rawWord||LANG.exec[heardWord]||heardWord}’`});
-  const said = (heardWord===want && rawWord && rawWord.startsWith('go')) ? 'go' : word;
-  execute(p.id, p.side, `${p.phrase} … ${said}`, p, meta || p.meta, extra);
+  const heardTxt = rawWord && rawWord.startsWith('go') ? 'go' : (LANG.exec[heardWord]||heardWord);
+  // 'nu', 'af' en 'go' zijn gelijkwaardig; 'lopen' hoort alleen bij laat … lopen.
+  if(heardWord && heardWord!==want){
+    if(heardWord==='LOPEN' || want==='LOPEN') extra.push({k:'warn', m:`Uitvoeringswoord hoort ‘${word}’ te zijn, niet ‘${heardTxt}’`});
+  }
+  const said = heardWord ? heardTxt : word;
+  execute(p.id, p.side, `${p.phrase} … ${said}`, p, Object.assign({}, p.meta, meta), extra);
   renderCmdHighlight(); updateExec();
 }
 function cancelPending(){
@@ -550,6 +555,7 @@ function execute(id, side, phrase, pend, meta, extraNotes){
     if(meta.tech!=null) parts.push(`verstaan ${Math.round(meta.tech*100)}%`);
     if(meta.voice!=null) parts.push(`uitspraak ${voiceWord(meta.voice)}`);
     if(parts.length) notes.push({k: (meta.voice!=null && meta.voice<0.34) ? 'warn' : 'info', m: 'Spraak: ' + parts.join(' · ')});
+    if(meta.tip) notes.push({k:'info', m: meta.tip});
   }
   lastSaid = {text: phrase, t:simT, pending:false};
   events.push({t:simT, label: phrase, kind:'cmd'});
@@ -1190,48 +1196,47 @@ $('btnCopyLog').addEventListener('click', ()=>{
    de microfoon zelf meet WANNEER een woord begint (inzet van de stem). Zo telt de
    timing van het uitvoeringswoord, ook al komt de herkende tekst een halve seconde later binnen. */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-const SYN = [ // extra uitspraakvormen; horen bij het taalpakket
-  {id:'LICHTE_HAAL', text:'lichte haal'},
-  {id:'LICHTE_HAAL', text:'light peddel'},
-  {id:'LICHTE_HAAL', text:'lijt peddel'},
-  {id:'LICHTE_HAAL', text:'light pedal'},
-  {id:'LICHTE_HAAL', text:'licht peddelen'},
-  {id:'NORMALE_HAAL', text:'normale haal'},
-  {id:'NORMALE_HAAL', text:'medium paddle'},
-  {id:'STERKE_HAAL', text:'sterke haal'},
-  {id:'STERKE_HAAL', text:'strong paddle'},
-  {id:'STERKE_HAAL', text:'full pressure'},
-  {id:'HOUDEN', side:'beide', text:'houden'},
-  {id:'HOUDEN', side:'beide', text:'houden beide'},
-  {id:'VASTROEIEN', side:'beide', text:'vastroeien'},
-  {id:'STRIJKEN', side:'beide', text:'strijken'},
-  {id:'STRIJKEN', side:'beide', text:'strijken beide'},
-  {id:'UITZETTEN', text:'uitzetten'},
-  {id:'HANDEN_VLOT', text:'handen aan vlot'},
-  {id:'STERK', side:'BB', text:'bakboord sterk'},
-  {id:'STERK', side:'SB', text:'stuurboord best'},
-  {id:'STERK', side:'BB', text:'bakboord harder'},
-  {id:'STERK', side:'SB', text:'stuurboord harder'},
-  {id:'RIEMEN_HOOG', side:'SB', text:'riemen hoog stuurboord'},
-  {id:'RIEMEN_HOOG', side:'BB', text:'riemen hoog bakboord'},
-  {id:'RONDMAKEN', side:'BB', text:'rondmaken over bakboord'},
-  {id:'RONDMAKEN', side:'SB', text:'rondmaken over stuurboord'},
-];
-const EXEC_TOK = {nu:'NU', nou:'NU', af:'AF', aff:'AF', go:'AF', goo:'AF', lopen:'LOPEN'};
-// Kleine woorden die de herkenning vaak verandert of weglaat ("klapje aan stuurboord"): tellen niet mee.
-const OPTIONAL = new Set(['op','aan','het','de','over']);
-const SIDE_TOK = new Set(['bakboord','stuurboord','beide','boorden']);
+/* Herkenning op sleutelwoorden, zoals een roeier luistert: een handeling, een kant en een uitvoeringswoord.
+   Volgorde en vulwoorden doen er niet toe. Of het ook volgens het boekje was, wordt apart als tip gemeld.
+   Het woordenboek hoort bij het taalpakket. */
+const KW = {
+  handen:'HANDEN', vlot:'VLOT',
+  uitzetten:'UITZETTEN', gelijk:'GELIJK',
+  klapje:'KLAPJE',
+  slagklaar:'SLAGKLAAR', maken:'MAKEN',
+  light:'LIGHT', lichte:'LIGHT', licht:'LIGHT', lijt:'LIGHT', lait:'LIGHT',
+  medium:'MEDIUM', normale:'MEDIUM', normaal:'MEDIUM',
+  strong:'STRONG', sterke:'STRONG',
+  best:'STERK', sterk:'STERK', harder:'STERK',
+  opgelet:'OPGELET',
+  laat:'LAAT',
+  vastroeien:'VAST', vast:'VAST',
+  houden:'HOUDEN', hou:'HOUDEN', houd:'HOUDEN',
+  bedankt:'BEDANKT',
+  gaan:'GAAN', ronden:'RONDEN', rondmaken:'RONDMAKEN',
+  strijken:'STRIJKEN', halen:'HALEN',
+  aanleggen:'AANLEGGEN',
+  riemen:'RIEMEN', hoog:'HOOG',
+  bakboord:'BB', stuurboord:'SB', beide:'BEIDE', boorden:'BEIDE',
+  nu:'X_NU', nou:'X_NU', af:'X_AF', aff:'X_AF', go:'X_AF', goo:'X_AF', lopen:'X_LOPEN',
+};
+const ROLE_CMD = {HANDEN:'HANDEN_VLOT', VLOT:'HANDEN_VLOT', UITZETTEN:'UITZETTEN', GELIJK:'BEIDE_GELIJK', KLAPJE:'KLAPJE',
+  SLAGKLAAR:'SLAGKLAAR', LIGHT:'LICHTE_HAAL', MEDIUM:'NORMALE_HAAL', STRONG:'STERKE_HAAL', STERK:'STERK', OPGELET:'OPGELET',
+  LAAT:'LAAT_LOPEN', VAST:'VASTROEIEN', HOUDEN:'HOUDEN', BEDANKT:'BEDANKT', RONDEN:'AANK_RONDEN', RONDMAKEN:'RONDMAKEN',
+  STRIJKEN:'STRIJKEN', HALEN:null, AANLEGGEN:'AANK_AANLEG', RIEMEN:'RIEMEN_HOOG', HOOG:'RIEMEN_HOOG'};
+const EXEC_OF = {X_NU:'NU', X_AF:'AF', X_LOPEN:'LOPEN'};
+// Verkeerd verstane schrijfwijzen van hetzelfde woord: geen tip waard.
+const ALIAS = {lijt:'light', lait:'light', houd:'houden'};
+const SIDE_OF = {BB:'BB', SB:'SB', BEIDE:'beide'};
+// Bij deze handelingen staat de kant in het boekje vóór het werkwoord ("bakboord best", "bakboord strijken, stuurboord halen").
+const SIDE_FIRST = new Set(['STERK','RIEMEN','HOOG','STRIJKEN','HALEN']);
 const FILLERS = new Set(['eh','eeh','ehh','uh','uhm','ehm','hm','euh']);
+const OPTIONAL = new Set(['op','aan','het','de','over','we']);
+const EXEC_TOK = {}; for(const [w,r] of Object.entries(KW)) if(EXEC_OF[r]) EXEC_TOK[w] = EXEC_OF[r];
 const norm = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim();
-const PHRASES = [];
-(function buildPhrases(){
-  for(const c of COMMANDS) for(const s of (c.sides||[null])) PHRASES.push({id:c.id, side:s, toks:norm(LANG.say[c.id](s)).split(' ')});
-  for(const y of SYN) PHRASES.push({id:y.id, side:y.side||null, toks:norm(y.text).split(' ')});
-  for(const p of PHRASES) p.prefixOfOther = PHRASES.some(q=> q!==p && q.toks.length>p.toks.length && p.toks.every((t,i)=>q.toks[i]===t));
-})();
 /* De herkenning zet spaties niet altijd waar wij ze verwachten ("slag klaarmaken", "stuur boord").
    Plak 1–3 opeenvolgende woorden aan elkaar en knip ze opnieuw in bekende roeiwoorden. */
-const VOCAB = new Set([...PHRASES.flatMap(p=>p.toks), ...Object.keys(EXEC_TOK), ...FILLERS]);
+const VOCAB = new Set([...Object.keys(KW), ...FILLERS]);
 function segment(s){
   const best = new Array(s.length+1).fill(null); best[0] = [];
   for(let i=0;i<s.length;i++){ if(!best[i]) continue;
@@ -1257,32 +1262,69 @@ function lev1(a,b){ // klopt de afstand ten hoogste 1?
 }
 // Gelijk bij ten hoogste één letter verschil, of als een afgekapt woord ("strijk", "rondmaak") het begin is van een roeiwoord.
 const tokEq = (a,b)=> a===b || (a.length>=5 && b.length>=5 && lev1(a,b)) || (a.length>=5 && b.length-a.length<=2 && b.startsWith(a));
-function matchPhrase(toks){
-  let best=null;
-  for(const p of PHRASES){
-    let j=0, hit=0, end=0, sidesOk=true, first=-1, need=0;
-    for(const t of p.toks){
-      const opt = OPTIONAL.has(t) && p.toks.length>1;
-      if(!opt) need++;
-      let k=j; while(k<toks.length && !tokEq(toks[k],t)) k++;
-      if(k<toks.length){ if(!opt) hit++; if(first<0) first=k; j=k+1; end=j; }
-      else if(SIDE_TOK.has(t)) sidesOk=false;
-    }
-    if(!sidesOk || !hit) continue;
-    const score = hit/need;
-    if(score < (need<=2 ? 1 : 0.75)) continue;
-    const cand = {p, score, end, first};
-    if(!best || better(cand, best)) best = cand;
-  }
-  return best;
+// Het roeiwoord achter een herkend woord, ook als de herkenning er een letter naast zat ("strijk", "bakbord").
+function kwKey(t){
+  if(KW[t]) return t;
+  if(t.length<5) return null;
+  let key=null; for(const k in KW){ if(k.length>=5 && tokEq(t,k)){ if(key && KW[key]!==KW[k]) return null; key=k; } }
+  return key;
 }
-// Volledige treffers gaan voor; daarna wat het eerst in de zin staat; daarna de langste formulering.
-function better(a, b){
-  const fa = a.score===1, fb = b.score===1;
-  if(fa !== fb) return fa;
-  if(a.first !== b.first) return a.first < b.first;
-  if(a.p.toks.length !== b.p.toks.length) return a.p.toks.length > b.p.toks.length;
-  return a.score > b.score;
+const kwOf = t => { const k = kwKey(t); return k ? KW[k] : null; };
+const isAct = r => r && !EXEC_OF[r] && !SIDE_OF[r];
+const sideOK = (id, sd) => { const c = COMMANDS.find(c=>c.id===id); return c.sides ? (sd && c.sides.includes(sd) ? sd : (!sd && c.sides.includes('beide') ? 'beide' : null)) : null; };
+/* Knip de woorden in commando's: elk stuk heeft een handeling, eventueel een kant en een uitvoeringswoord. */
+function chunkToks(toks, from){
+  const items = []; for(let i=from;i<toks.length;i++){ const t=toks[i]; if(FILLERS.has(t)) continue; const r=kwOf(t); if(r) items.push({r, i, t}); }
+  const out = []; let cur = null, pendSide = null, gaan = false;
+  const close = (end)=>{ if(cur){ cur.end = Math.max(cur.end, end ?? cur.end); out.push(cur); cur = null; } };
+  const start = (role, it)=>{ cur = {role, id:ROLE_CMD[role], side:null, start: pendSide ? pendSide.i : it.i, end: it.i, exec:null, gaan};
+    if(pendSide){ cur.side = pendSide.r; pendSide = null; } gaan = false; };
+  for(let k=0;k<items.length;k++){
+    const it = items[k], r = it.r, nxt = items[k+1];
+    if(EXEC_OF[r]){
+      if(cur && cur.id){ cur.exec = {word:EXEC_OF[r], raw:it.t}; close(it.i); }
+      else { close(); out.push({execOnly:{word:EXEC_OF[r], raw:it.t}, start:it.i, end:it.i}); }
+      pendSide = null; continue;
+    }
+    if(SIDE_OF[r]){
+      const toNext = nxt && isAct(nxt.r) && (SIDE_FIRST.has(nxt.r) || !cur || cur.side || !cur.id);
+      if(toNext){ if(!(cur && cur.role==='STRIJKEN' && nxt.r==='HALEN' && !cur.side)) { pendSide = (pendSide && pendSide.r===r) ? pendSide : it; continue; } }
+      if(cur && (!cur.side || cur.side===r)){ cur.side = r; cur.end = it.i; }
+      else if(cur && cur.side==='BEIDE' && r==='BEIDE'){ cur.end = it.i; }
+      else pendSide = it;
+      continue;
+    }
+    if(r==='GAAN'){ gaan = true; continue; }
+    if(r==='MAKEN'){ if(cur && cur.id==='SLAGKLAAR'){ cur.id='SLAGKLAAR_MAKEN'; cur.role='SLAGKLAAR_MAKEN'; cur.end=it.i; } continue; }
+    if(cur){ // twee woorden die samen één commando zijn
+      const a = cur.role;
+      if((a==='STRIJKEN'&&r==='HALEN') || (a==='HALEN'&&r==='STRIJKEN')){
+        let sd = a==='STRIJKEN' ? cur.side : (pendSide ? pendSide.r : null);
+        if(!sd && a==='HALEN' && cur.side) sd = cur.side==='BB' ? 'SB' : cur.side==='SB' ? 'BB' : null;
+        cur.role='RONDMAKEN'; cur.id='RONDMAKEN'; cur.side = sd; cur.end = it.i; pendSide = null; continue;
+      }
+      if((a==='RIEMEN'&&r==='HOOG') || (a==='HOOG'&&r==='RIEMEN') || (a==='HANDEN'&&r==='VLOT') || (a==='VLOT'&&r==='HANDEN') ||
+         (a==='UITZETTEN'&&r==='GELIJK') || (a==='AANLEGGEN'&&r==='VLOT') || a===r){ cur.end = it.i; continue; }
+      close();
+    }
+    start(r, it);
+  }
+  if(cur) out.push(Object.assign(cur, {open:true}));
+  for(const c of out){
+    if(c.gaan && (c.id==='RONDMAKEN')) c.id = 'AANK_RONDEN';
+  }
+  return out;
+}
+/* Wijkt de formulering af van het boekje? Dan krijgt de stuur een tip, de ploeg begrijpt het wel. */
+function bookTip(toks, c, id, side){
+  const cmd = COMMANDS.find(x=>x.id===id);
+  // Alleen de roeiwoorden tellen, in hun volgorde; 'we gaan' en 'boorden' na 'beide' mogen wegvallen.
+  const keys = arr => arr.map(kwKey).filter(k=> k && !EXEC_OF[KW[k]] && k!=='gaan' && k!=='boorden').map(k=>ALIAS[k]||k).join(' ');
+  const said = keys(toks.slice(c.start, c.end+1));
+  const book = keys(norm(LANG.say[id](side)).split(' '));
+  const okExec = !cmd.exec || !c.exec || (c.exec.word==='LOPEN') === (cmd.exec==='LOPEN'); // nu, af en go zijn gelijkwaardig
+  if(said===book && okExec) return null;
+  return `Boekje: ‘${LANG.say[id](side)}${cmd.exec ? ' … '+LANG.exec[cmd.exec] : ''}’`;
 }
 const SPEECH = {on:false, rec:null, stream:null, ctx:null, an:null, buf:null, floor:0.003, inSpeech:false, lastLoud:0, onsets:[], sess:0, utt:new Map()};
 function micNote(msg, kind){ const el=$('micNote'); el.textContent=msg; el.className='note'+(kind?' '+kind:''); }
@@ -1330,37 +1372,21 @@ function showCert(tech, voice){
   $('certVoiceLbl').textContent = voice==null ? '–' : voiceWord(voice);
 }
 /* Eén uiting kan meerdere commando's bevatten ("slagklaar maken … slagklaar … af").
-   We lopen de herkende woorden van links naar rechts af; u.pos onthoudt tot waar al verwerkt is,
-   zodat een tussentijdse en een definitieve herkenning niets dubbel uitvoeren. */
+   u.pos onthoudt tot waar al verwerkt is, zodat een tussentijdse en een definitieve herkenning niets dubbel uitvoeren.
+   Een stuk wordt pas uitgevoerd als het af is: er volgt een uitvoeringswoord of een volgend commando, of de herkenning is definitief. */
 function parseUtterance(u, toks, isFinal, pendingId){
-  const acts = []; let guard = 0;
-  while(u.pos < toks.length && guard++ < 12){
-    const rest = toks.slice(u.pos);
-    if(u.open){
-      const k = rest.findIndex(t=>EXEC_TOK[t]);
-      const m = matchPhrase(rest);
-      if(k>=0 && (!m || m.first > k)){ acts.push({type:'exec', word:EXEC_TOK[rest[k]], raw:rest[k]}); u.pos += k+1; u.open = null; pendingId = null; continue; }
-      if(!(m && m.score===1)) break;
-      u.open = null; // een nieuw commando vervangt de aankondiging
-    }
-    const m = matchPhrase(rest);
-    if(m){
-      const c = COMMANDS.find(c=>c.id===m.p.id);
-      // "houden" is ook het begin van "houden bakboord": in een tussentijdse herkenning wachten tot er een
-      // uitvoeringswoord achter staat of de herkenning definitief is ("houden bak…" is nog geen houden beide).
-      const nxt = rest[m.end];
-      const waiting = !isFinal && m.p.prefixOfOther && !(nxt && EXEC_TOK[nxt]);
-      if(waiting || !(isFinal || m.score===1)) break;
-      acts.push({type:'issue', id:c.id, side:m.p.side});
-      u.pos += m.end;
-      if(c.exec){ u.open = c.id; pendingId = c.id; }
-      continue;
-    }
-    if(pendingId){
-      const k = rest.findIndex(t=>EXEC_TOK[t]);
-      if(k>=0 && k<=2){ acts.push({type:'exec', word:EXEC_TOK[rest[k]], raw:rest[k]}); u.pos += k+1; pendingId = null; continue; }
-    }
-    break;
+  const acts = [];
+  for(const c of chunkToks(toks, u.pos)){
+    if(c.open && !isFinal) break;
+    u.pos = c.end + 1;
+    if(c.execOnly){ if(pendingId){ acts.push({type:'exec', word:c.execOnly.word, raw:c.execOnly.raw}); pendingId = null; } continue; }
+    if(!c.id) continue;
+    const cmd = COMMANDS.find(x=>x.id===c.id);
+    const side = cmd.sides ? sideOK(c.id, SIDE_OF[c.side]) : null;
+    if(cmd.sides && !side){ acts.push({type:'noside', id:c.id}); continue; }
+    acts.push({type:'issue', id:c.id, side, tip: bookTip(toks, c, c.id, side)});
+    pendingId = cmd.exec ? c.id : null;
+    if(c.exec){ if(cmd.exec){ acts.push({type:'exec', word:c.exec.word, raw:c.exec.raw}); pendingId = null; } }
   }
   return acts;
 }
@@ -1377,7 +1403,9 @@ function onSpeech(key, text, isFinal, conf){
     if(a.type==='issue'){
       const st = takeStartOnset(); if(st) u.start = st;
       voice = voiceScore(u.start, toks);
-      issue(a.id, a.side, st, {tech, voice});
+      issue(a.id, a.side, st, {tech, voice, tip:a.tip});
+    } else if(a.type==='noside'){
+      sysLog(`‘${LANG.row[a.id].replace(/ … nu$/,'').replace(/ (op|aan|over)$/,'')}’ zonder kant: de ploeg weet niet welk boord`, 'warn');
     } else {
       fireExec(latestOnsetAfter(u.start), a.word, {tech, voice}, a.raw);
     }
@@ -1385,7 +1413,8 @@ function onSpeech(key, text, isFinal, conf){
   showCert(tech, voice);
   if(isFinal && acts.length===0 && u.pos===0) $('heard').textContent = `${text.trim()}  (geen commando herkend)`;
   // Wat gehoord maar niet herkend is, komt in het logboek: zo kan het taalpakket worden aangevuld.
-  if(isFinal && toks.slice(u.pos).some(t=>!FILLERS.has(t) && !EXEC_TOK[t])) sysLog(`Spraak niet herkend: “${text.trim()}”${u.pos>0?` (rest na ‘${toks.slice(0,u.pos).join(' ')}’)`:''}`, 'info');
+  if(acts.length) u.any = true;
+  if(isFinal && !u.any) sysLog(`Spraak niet herkend: “${text.trim()}”`, 'info');
   if(isFinal && u.pos>0 && tech!=null && log[0] && !log[0].system){
     // werk de zekerheid bij in het logboek zodra de definitieve herkenning binnen is
     const n = log[0].notes.find(n=>n.m.startsWith('Spraak:'));
