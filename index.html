@@ -1,0 +1,1366 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+</head>
+<body>
+<title>Coxpit v0</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Barlow+Condensed:wght@500;600;700&display=swap">
+<style>
+/* Layout: het instrumentenpaneel van de stuur. Water links, commandobord rechts, nabespreking en logboek eronder. */
+:root{
+  --bg:#e9eef0; --surface:#ffffff; --sunk:#dfe6e9; --ink:#14212a; --muted:#52636c; --line:#c9d4d8;
+  --accent:#0c6870; --accent-ink:#ffffff; --accent-soft:#d3eaec;
+  --good:#2b7a4b; --warn:#9a6200; --bad:#b0342b;
+  --font-display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+  --font-body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --radius:6px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1518; --surface:#162026; --sunk:#0a1013; --ink:#e3ebee; --muted:#93a5ad; --line:#2a3a41;
+    --accent:#5bbfc6; --accent-ink:#052528; --accent-soft:#143a3e;
+    --good:#61bf88; --warn:#e2a744; --bad:#ec7b70; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1518; --surface:#162026; --sunk:#0a1013; --ink:#e3ebee; --muted:#93a5ad; --line:#2a3a41;
+  --accent:#5bbfc6; --accent-ink:#052528; --accent-soft:#143a3e;
+  --good:#61bf88; --warn:#e2a744; --bad:#ec7b70; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:15px;line-height:1.45}
+.app{max-width:1440px;margin:0 auto;padding-block:12px 28px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:12px}
+button{font:inherit;color:inherit}
+kbd{font-family:var(--font-display);font-size:.8em;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;background:var(--surface);color:var(--muted)}
+
+/* Kopbalk */
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px}
+.brand{display:flex;align-items:baseline;gap:8px}
+.mark{font-family:var(--font-display);font-weight:700;font-size:30px;letter-spacing:.01em;line-height:1}
+.ver{font-family:var(--font-display);font-weight:600;font-size:15px;color:var(--accent);border:1.5px solid var(--accent);border-radius:4px;padding:0 6px}
+.meta{color:var(--muted);font-size:14px}
+.bar-actions{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:var(--radius);padding:6px 12px;cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+.btn:focus-visible,.cmd:focus-visible,.chip:focus-visible,.exec:focus-visible,.rudder:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* Raster */
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 360px;grid-template-areas:"stage panel" "review log";gap:12px}
+.stage-wrap{grid-area:stage;display:flex;flex-direction:column;gap:10px;min-width:0}
+.stage{position:relative;height:clamp(300px,48vh,600px);border-radius:var(--radius);overflow:hidden;background:#7d9858}
+.stage canvas{display:block;width:100%;height:100%}
+.panel{grid-area:panel;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);display:flex;flex-direction:column;min-width:0;align-self:start}
+.board{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:10px 14px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px}
+.board .cmd-group{margin:0;gap:4px}
+.board .cmd{padding:4px 8px;font-size:13.5px}
+.board .cmd-row{flex-wrap:wrap;gap:4px}
+.board .cmd-row .lbl{flex:1 1 100%;font-size:13.5px}
+.board .chip{padding:3px 8px;font-size:14px;min-width:40px}
+.board .sec-title{font-size:12px;margin:0 0 2px}
+.mic{display:flex;align-items:center;gap:8px;width:100%;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:18px;letter-spacing:.03em;padding:8px 12px}
+.mic .dot{width:12px;height:12px;border-radius:50%;background:var(--line);flex:none}
+.mic.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.mic.on .dot{background:var(--bad);box-shadow:0 0 0 3px rgba(255,255,255,.55)}
+.mic.on kbd{background:transparent;color:inherit;border-color:currentColor}
+.meter{height:6px;border-radius:3px;background:var(--sunk);overflow:hidden;margin-top:8px}
+.meter div{height:100%;width:0;background:var(--accent)}
+.heard{margin-top:10px;display:flex;flex-direction:column;gap:2px}
+.heard #heard{font-family:var(--font-display);font-weight:600;font-size:18px;line-height:1.2;min-height:22px;overflow-wrap:anywhere}
+.cert{display:grid;grid-template-columns:auto 1fr auto;gap:6px 8px;align-items:center;margin-top:10px;font-size:13px}
+.cert .bar{height:8px;border-radius:4px;background:var(--sunk);overflow:hidden}
+.cert .bar div{height:100%;width:0;background:var(--good)}
+.cert .lv{font-family:var(--font-display);font-weight:600;font-size:14px;min-width:84px;text-align:right}
+.note.bad{color:var(--bad)} .note.good{color:var(--good)}
+.review{grid-area:review;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;min-width:0;display:flex;flex-direction:column;gap:10px}
+.log{grid-area:log;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;min-width:0;display:flex;flex-direction:column;gap:8px;max-height:360px}
+@media (max-width:980px){
+  .grid{grid-template-columns:minmax(0,1fr);grid-template-areas:"stage" "panel" "review" "log"}
+  .stage{height:clamp(300px,52vh,560px)}
+}
+
+/* Roer en uitvoeringswoord */
+.helm{display:grid;grid-template-columns:1fr minmax(0,1.3fr) 1fr;gap:10px;align-items:stretch}
+.rudder{border:1px solid var(--line);background:var(--surface);border-radius:var(--radius);padding:10px 8px;cursor:pointer;font-family:var(--font-display);font-weight:600;font-size:18px;letter-spacing:.02em;display:flex;align-items:center;justify-content:center;gap:8px;user-select:none;touch-action:none}
+.rudder.on{background:var(--accent-soft);border-color:var(--accent)}
+.callbox{display:flex;align-items:stretch;gap:8px;min-width:0}
+.said{flex:1;min-width:0;border:1px dashed var(--line);border-radius:var(--radius);padding:6px 10px;display:flex;flex-direction:column;justify-content:center;background:var(--sunk)}
+.said-label{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.said-text{font-family:var(--font-display);font-weight:600;font-size:20px;line-height:1.15;overflow-wrap:anywhere}
+.exec{min-width:112px;border:none;border-radius:var(--radius);background:var(--accent);color:var(--accent-ink);font-family:var(--font-display);font-weight:700;font-size:24px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;padding:6px 14px;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1}
+.exec small{font-family:var(--font-body);font-weight:400;font-size:11px;letter-spacing:.02em;text-transform:none;margin-top:4px;opacity:.85}
+.exec:disabled{background:var(--sunk);color:var(--muted);cursor:default}
+@media (max-width:560px){.helm{grid-template-columns:1fr 1fr}.callbox{grid-column:1 / -1;grid-row:1}}
+
+/* Commandobord */
+.panel-sec{padding:12px 14px;border-bottom:1px solid var(--line)}
+.panel-sec:last-child{border-bottom:none}
+.sec-title{font-family:var(--font-display);font-weight:600;font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+.tasks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.tasks li{display:flex;gap:8px;align-items:baseline;font-size:14px}
+.tick{width:16px;height:16px;flex:none;border:1.5px solid var(--line);border-radius:50%;position:relative;top:3px}
+.tasks li.done .tick{background:var(--good);border-color:var(--good)}
+.tasks li.done span:last-child{color:var(--muted)}
+.cmd-group{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
+.cmd-group:last-child{margin-bottom:0}
+.cmd-row{display:flex;align-items:center;gap:6px}
+.cmd{flex:1;min-width:0;text-align:left;border:1px solid var(--line);background:var(--surface);border-radius:var(--radius);padding:6px 10px;cursor:pointer;font-size:14px}
+.cmd:hover,.chip:hover{border-color:var(--accent)}
+.cmd .x{color:var(--accent);font-weight:700}
+.cmd-row .lbl{flex:1;min-width:0;font-size:14px}
+.chips{display:flex;gap:4px}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:var(--radius);padding:5px 9px;cursor:pointer;font-family:var(--font-display);font-weight:600;font-size:15px;letter-spacing:.03em;min-width:44px}
+.chip.pending,.cmd.pending{background:var(--accent-soft);border-color:var(--accent)}
+details.settings summary{cursor:pointer;font-family:var(--font-display);font-weight:600;font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.set-grid{display:grid;grid-template-columns:1fr auto;gap:8px 10px;align-items:center;margin-top:10px;font-size:14px}
+.set-grid input[type=range]{width:100%;grid-column:1 / -1;accent-color:var(--accent)}
+.set-grid .val{font-family:var(--font-display);font-weight:600;font-variant-numeric:tabular-nums}
+.note{font-size:13px;color:var(--muted);margin:8px 0 0}
+.howto{font-size:13.5px;color:var(--muted);margin:0;display:flex;flex-direction:column;gap:4px}
+
+/* Nabespreking en logboek */
+.head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.head h2{font-family:var(--font-display);font-weight:700;font-size:20px;margin:0;letter-spacing:.01em}
+.head .sub{font-size:13px;color:var(--muted)}
+.tl-wrap{position:relative;height:170px}
+.tl-wrap canvas{display:block;width:100%;height:100%}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.metric{background:var(--sunk);border-radius:var(--radius);padding:8px 10px}
+.metric .k{font-size:12px;color:var(--muted)}
+.metric .v{font-family:var(--font-display);font-weight:700;font-size:22px;font-variant-numeric:tabular-nums;line-height:1.1}
+.metric .v.good{color:var(--good)} .metric .v.warn{color:var(--warn)} .metric .v.bad{color:var(--bad)}
+.log ol{list-style:none;margin:0;padding:0;overflow:auto;display:flex;flex-direction:column;gap:6px;min-height:0}
+.log li{display:grid;grid-template-columns:44px minmax(0,1fr);gap:8px;font-size:14px;border-bottom:1px solid var(--line);padding-bottom:6px}
+.log li:last-child{border-bottom:none}
+.log .t{font-family:var(--font-display);font-weight:600;color:var(--muted);font-variant-numeric:tabular-nums}
+.log .phrase{font-weight:700}
+.log .sys{color:var(--muted)}
+.log .n{display:block;font-size:13px}
+.log .n.good{color:var(--good)} .log .n.warn{color:var(--warn)} .log .n.bad{color:var(--bad)} .log .n.info{color:var(--muted)}
+.empty{color:var(--muted);font-size:14px}
+@media (prefers-reduced-motion: reduce){*{scroll-behavior:auto}}
+</style>
+
+<div class="app">
+  <header class="bar">
+    <div class="brand"><span class="mark">Coxpit</span><span class="ver">v0.2</span></div>
+    <div class="meta">C4x+ · perfecte ploeg · stilstaand water · spraak in Chrome of Edge</div>
+    <div class="bar-actions">
+      <button class="btn" id="btnPause" type="button">Pauze <kbd>P</kbd></button>
+      <button class="btn" id="btnReset" type="button">Terug naar het vlot</button>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="stage-wrap" aria-label="Water">
+      <div class="stage"><canvas id="sim" aria-label="Bovenaanzicht van de boot op het water"></canvas></div>
+      <div class="helm">
+        <button class="rudder" id="rBB" type="button" aria-label="Bakboord-stuurtouw, ingedrukt houden"><kbd>←</kbd> BB-touw</button>
+        <div class="callbox">
+          <div class="said" aria-live="polite">
+            <span class="said-label" id="saidLabel">Laatste commando</span>
+            <span class="said-text" id="saidText">Nog niets gezegd</span>
+          </div>
+          <button class="exec" id="exec" type="button" disabled><span id="execWord">…</span><small>spatiebalk</small></button>
+        </div>
+        <button class="rudder" id="rSB" type="button" aria-label="Stuurboord-stuurtouw, ingedrukt houden">SB-touw <kbd>→</kbd></button>
+      </div>
+      <div class="board" id="cmds" aria-label="Commando's"></div>
+    </section>
+
+    <aside class="panel" aria-label="Commando's">
+      <div class="panel-sec">
+        <h2 class="sec-title">Oefening</h2>
+        <ol class="tasks" id="tasks">
+          <li data-k="weg"><span class="tick"></span><span>Vaar weg van het vlot</span></li>
+          <li data-k="bocht"><span class="tick"></span><span>Roei rechtdoor naar de bocht (450 m)</span></li>
+          <li data-k="rond"><span class="tick"></span><span>Maak rond</span></li>
+          <li data-k="aan"><span class="tick"></span><span>Leg aan bij het vlot</span></li>
+        </ol>
+      </div>
+      <div class="panel-sec">
+        <h2 class="sec-title">Spraak</h2>
+        <button class="btn mic" id="btnMic" type="button"><span class="dot"></span><span id="micLabel">Spraak aan</span> <kbd>M</kbd></button>
+        <div class="meter" aria-hidden="true"><div id="vu"></div></div>
+        <div class="heard" aria-live="polite"><span class="said-label">Gehoord</span><span id="heard">–</span></div>
+        <div class="cert">
+          <span>Verstaan</span><div class="bar"><div id="certTech"></div></div><span class="lv" id="certTechLbl">–</span>
+          <span>Uitspraak</span><div class="bar"><div id="certVoice"></div></div><span class="lv" id="certVoiceLbl">–</span>
+        </div>
+        <p class="note" id="micNote">Spreek de commando's uit zoals in de boot. Een tweedelig commando mag in één adem (“Laat … lopen”) of in twee delen. Het moment waarop je het uitvoeringswoord inzet, telt.</p>
+      </div>
+      <div class="panel-sec">
+        <details class="settings">
+          <summary>Zo werkt het</summary>
+          <div class="howto" style="margin-top:8px">
+            <span>Klik een commando. Bij een tweedelig commando, zoals <b>Laat … lopen</b>, geef je het uitvoeringswoord met de grote knop of de spatiebalk. Het moment daarvan telt.</span>
+            <span>Stuur met <kbd>←</kbd> (bakboord-touw) en <kbd>→</kbd> (stuurboord-touw). Ingedrukt houden beweegt het roer; loslaten houdt het vast. De roerstand zie je niet, net als in de boot.</span>
+            <span><kbd>Esc</kbd> trekt een aangekondigd commando in. <kbd>P</kbd> pauzeert.</span>
+          </div>
+        </details>
+      </div>
+      <div class="panel-sec">
+        <details class="settings" id="setDetails">
+          <summary>Instellingen</summary>
+          <div class="set-grid">
+            <label for="sRate">Tempo</label><span class="val" id="vRate"></span>
+            <input type="range" id="sRate" min="16" max="26" step="1">
+            <label for="sRudT">Roer van midden naar aanslag</label><span class="val" id="vRudT"></span>
+            <input type="range" id="sRudT" min="0.4" max="2.5" step="0.1">
+            <label for="sRudMax">Maximale roeruitslag</label><span class="val" id="vRudMax"></span>
+            <input type="range" id="sRudMax" min="30" max="45" step="1">
+            <label for="sZoom">Zoom</label><span class="val" id="vZoom"></span>
+            <input type="range" id="sZoom" min="4" max="18" step="1">
+            <label for="sHeadUp">Kaart draait mee met de boot</label><input type="checkbox" id="sHeadUp">
+            <label for="sShowRud">Roerstand tonen (instructeur)</label><input type="checkbox" id="sShowRud">
+            <label for="sSound">Geluid van de haal</label><input type="checkbox" id="sSound">
+          </div>
+          <p class="note">Boot- en roerwaarden zijn startwaarden voor een C4x+, bedoeld om af te stellen.</p>
+        </details>
+      </div>
+    </aside>
+
+    <section class="review" aria-label="Nabespreking">
+      <div class="head"><h2>Nabespreking</h2><span class="sub">Laatste 60 seconden: commando's, haal en roeruitslag</span></div>
+      <div class="tl-wrap"><canvas id="tl" aria-label="Tijdlijn van commando's, haalfase en roeruitslag"></canvas></div>
+      <div class="metrics" id="metrics"></div>
+    </section>
+
+    <section class="log" aria-label="Logboek">
+      <div class="head"><h2>Logboek</h2><span class="sub">Nieuwste boven</span></div>
+      <ol id="log"><li class="empty" style="display:block;border:none">Je ligt aan het vlot, bakboord langszij. Begin met <b>Uitzetten gelijk … nu</b>.</li></ol>
+    </section>
+  </main>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ---------------- Commando's als data, los van de woorden ---------------- */
+const SIDE_NAME = {BB:'bakboord', SB:'stuurboord', beide:'beide boorden'};
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+const COMMANDS = [
+  {id:'HANDEN_VLOT',     group:'wegvaren'},
+  {id:'UITZETTEN',       group:'wegvaren', exec:'NU'},
+  {id:'KLAPJE',          group:'wegvaren', sides:['BB','SB'], exec:'NU'},
+  {id:'SLAGKLAAR_MAKEN', group:'roeien'},
+  {id:'SLAGKLAAR',       group:'roeien', exec:'AF'},
+  {id:'LICHTE_HAAL',     group:'roeien'},
+  {id:'NORMALE_HAAL',    group:'roeien'},
+  {id:'STERK',           group:'sturen', sides:['BB','SB']},
+  {id:'BEIDE_GELIJK',    group:'sturen'},
+  {id:'OPGELET',         group:'stoppen'},
+  {id:'LAAT_LOPEN',      group:'stoppen', exec:'LOPEN'},
+  {id:'VASTROEIEN',      group:'stoppen', sides:['BB','SB','beide']},
+  {id:'HOUDEN',          group:'stoppen', sides:['BB','SB','beide'], exec:'NU'},
+  {id:'BEDANKT',         group:'stoppen'},
+  {id:'AANK_RONDEN',     group:'rondmaken', sides:['BB','SB']},
+  {id:'RONDMAKEN',       group:'rondmaken', sides:['BB','SB'], exec:'NU'},
+  {id:'STRIJKEN',        group:'rondmaken', sides:['BB','SB','beide'], exec:'NU'},
+  {id:'AANK_AANLEG',     group:'aanleggen', sides:['BB','SB']},
+  {id:'RIEMEN_HOOG',     group:'aanleggen', sides:['BB','SB']},
+];
+/* Taalpakket nl. Een ander land of een verenigingsvariant is een ander pakket, geen andere code. */
+const LANG = {
+  groups:{wegvaren:'Wegvaren', roeien:'Roeien', sturen:'Sturen met de riemen', stoppen:'Stoppen', rondmaken:'Rondmaken', aanleggen:'Aanleggen'},
+  exec:{NU:'nu', AF:'af', LOPEN:'lopen'},
+  say:{
+    HANDEN_VLOT:()=>'Handen aan het vlot',
+    UITZETTEN:()=>'Uitzetten gelijk',
+    KLAPJE:s=>`Klapje op ${SIDE_NAME[s]}`,
+    SLAGKLAAR_MAKEN:()=>'Slagklaar maken',
+    SLAGKLAAR:()=>'Slagklaar',
+    LICHTE_HAAL:()=>'Lichte haal',
+    NORMALE_HAAL:()=>'Normale haal',
+    STERK:s=> s==='BB' ? 'Bakboord best' : 'Stuurboord sterk',
+    BEIDE_GELIJK:()=>'Beide boorden gelijk',
+    OPGELET:()=>'Opgelet',
+    LAAT_LOPEN:()=>'Laat',
+    VASTROEIEN:s=>`Vastroeien ${SIDE_NAME[s]}`,
+    HOUDEN:s=>`Houden ${SIDE_NAME[s]}`,
+    BEDANKT:()=>'Bedankt',
+    AANK_RONDEN:s=>`We gaan ronden over ${SIDE_NAME[s]}`,
+    RONDMAKEN:s=> s==='BB' ? 'Bakboord strijken, stuurboord halen' : 'Stuurboord strijken, bakboord halen',
+    STRIJKEN:s=>`Strijken ${SIDE_NAME[s]}`,
+    AANK_AANLEG:s=>`We gaan aanleggen aan ${SIDE_NAME[s]}`,
+    RIEMEN_HOOG:s=>`${cap(SIDE_NAME[s])} riemen hoog`,
+  },
+  row:{
+    HANDEN_VLOT:'Handen aan het vlot', UITZETTEN:'Uitzetten gelijk … nu', KLAPJE:'Klapje op … nu',
+    SLAGKLAAR_MAKEN:'Slagklaar maken', SLAGKLAAR:'Slagklaar … af', LICHTE_HAAL:'Lichte haal', NORMALE_HAAL:'Normale haal',
+    STERK:'Bakboord best / Stuurboord sterk', BEIDE_GELIJK:'Beide boorden gelijk',
+    OPGELET:'Opgelet', LAAT_LOPEN:'Laat … lopen', VASTROEIEN:'Vastroeien', HOUDEN:'Houden … nu', BEDANKT:'Bedankt',
+    AANK_RONDEN:'We gaan ronden over', RONDMAKEN:'Strijken, halen … nu', STRIJKEN:'Strijken … nu',
+    AANK_AANLEG:'We gaan aanleggen aan', RIEMEN_HOOG:'Riemen hoog',
+  },
+  chip:{BB:'BB', SB:'SB', beide:'Beide'},
+};
+
+/* ---------------- Boot en ploeg: startwaarden voor een C4x+ (aannames, instelbaar) ---------------- */
+const DEG = Math.PI/180;
+const P = {
+  L:11.0,                 // lengte (m)
+  mu:480, mv:1100, Iz:12000, // massa vooruit, zijwaarts (incl. meebewegend water), traagheid om de as
+  kx:25,                  // weerstand vooruit: X = -kx·u|u|
+  ky1:250, ky:700,        // zijwaartse weerstand (kiel)
+  krU:3000, kr0:800, kr2:30000, // gierdemping
+  Fpeak:440,              // piekkracht per boord tijdens de haal (N)
+  dBlade:2.0,             // effectieve arm van de bladkracht tot de hartlijn (m)
+  kHold:180, kVast:60, kFlat:4, // remming per boord: houden, vastroeien, bladen plat
+  kR:12, kRd:40, lR:5.3,  // roer: lift, extra weerstand, afstand roer tot zwaartepunt
+  df:0.42,                // deel van de cyclus dat de haal duurt
+};
+const ROWERS = [ {x:2.0}, {x:0.62}, {x:-0.76}, {x:-2.14} ]; // boeg, 2, 3, slag
+const COX_X = -4.45;
+const LOCK_Y = 0.80, OUTBOARD = 2.15, INBOARD = 0.82;
+const TH_C = 55*DEG, TH_F = -35*DEG; // bladhoek inpik (naar de boeg), uitpik (naar het hek)
+
+/* ---------------- Vaarwater (m). Noord = +y ---------------- */
+const W1 = {x0:-22, x1:22, y0:-60, y1:700};
+const W2 = {x0:-22, x1:620, y0:640, y1:700};
+const VLOT = {x0:-22, x1:-19, y0:-6, y1:16};
+const BOTENHUIS = {x0:-48, x1:-29, y0:-4, y1:22};
+const START = {x:-17.95, y:5, psi:Math.PI/2};
+const inR = (r,x,y)=> x>=r.x0 && x<=r.x1 && y>=r.y0 && y<=r.y1;
+const inVlot = (x,y)=> inR(VLOT,x,y);
+const isWater = (x,y)=> (inR(W1,x,y)||inR(W2,x,y)) && !inVlot(x,y);
+
+/* ---------------- Instellingen ---------------- */
+const S = {rate:20, rudT:1.0, rudMax:40, zoom:9, headUp:true, showRud:false, sound:true};
+try{ const saved = JSON.parse(localStorage.getItem('coxpit-v0-settings')||'null'); if(saved) Object.assign(S, saved); }catch(e){}
+const saveS = ()=>{ try{ localStorage.setItem('coxpit-v0-settings', JSON.stringify(S)); }catch(e){} };
+
+/* ---------------- Toestand ---------------- */
+let boat, crew, keys, simT, paused, pending, log, samples, events, stats, tasks, puddles, wake, lastSaid;
+function resetAll(){
+  boat = {x:START.x, y:START.y, psi:START.psi, u:0, v:0, r:0, delta:0};
+  crew = {mode:'vlot', phase:0, side:{BB:'plat', SB:'plat'}, press:{BB:1,SB:1}, light:false, stopAtFinish:false,
+          ready:null, rondSide:null, strijk:{BB:false,SB:false}, klapjeSide:null, klapjeT:0};
+  keys = {BB:false, SB:false};
+  simT = 0; paused = false; pending = null;
+  log = []; samples = []; events = []; puddles = []; wake = [];
+  stats = {steerDrive:0, steerRec:0, over30:0, reversals:0, collisions:0, lastSig:0, lastSigT:-99, llGood:0, llTotal:0, bladeHits:0, lastFinishT:-99};
+  tasks = {weg:false, bocht:false, rond:false, aan:false, rondStartPsi:null, rondAccum:0, prevPsi:null};
+  lastSaid = null;
+  collisionCooldown = 0; bladeCooldown = {BB:0, SB:0};
+  renderLog(); renderTasks(); updateSaid(); updateExec(); renderCmdHighlight();
+}
+let collisionCooldown = 0, bladeCooldown = {BB:0, SB:0};
+
+/* ---------------- Geluid ---------------- */
+let actx = null;
+function ensureAudio(){
+  if(!S.sound) return;
+  try{ if(!actx) actx = new (window.AudioContext||window.webkitAudioContext)(); if(actx.state==='suspended') actx.resume(); }catch(e){ actx=null; }
+}
+function noise(dur, gain, freq){
+  if(!S.sound || !actx) return;
+  const n = Math.floor(actx.sampleRate*dur), buf = actx.createBuffer(1,n,actx.sampleRate), d = buf.getChannelData(0);
+  for(let i=0;i<n;i++) d[i] = (Math.random()*2-1)*Math.pow(1-i/n, 2);
+  const src = actx.createBufferSource(); src.buffer = buf;
+  const f = actx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=freq;
+  const g = actx.createGain(); g.gain.value=gain;
+  src.connect(f).connect(g).connect(actx.destination); src.start();
+}
+function tone(freq, dur, gain, type){
+  if(!S.sound || !actx) return;
+  const o = actx.createOscillator(), g = actx.createGain(); o.type=type||'triangle'; o.frequency.value=freq;
+  const t = actx.currentTime; g.gain.setValueAtTime(gain,t); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g).connect(actx.destination); o.start(t); o.stop(t+dur+0.02);
+}
+const sCatch = ()=> noise(0.12, 0.35, 900);
+const sFinish = ()=> { tone(520,0.05,0.12,'square'); noise(0.06,0.12,2400); };
+const sTok = ()=> tone(160,0.05,0.25,'square');
+const sBump = ()=> noise(0.25,0.6,300);
+
+/* ---------------- Commando's uitvoeren ---------------- */
+const fmtT = t => { const m=Math.floor(t/60), s=Math.floor(t%60); return `${m}:${String(s).padStart(2,'0')}`; };
+const phaseNow = ()=> crew.phase;
+const circDist = (a,b)=> { let d=Math.abs(a-b)%1; return Math.min(d,1-d); };
+const where = ph => ph < P.df ? 'in de haal' : 'in de recover';
+const rowingModes = new Set(['roeien','rond','strijken']);
+const isRowing = ()=> rowingModes.has(crew.mode);
+const nearVlot = ()=> boat.x < -14.5 && boat.x > -20 && boat.y > -8 && boat.y < 18;
+const speed = ()=> Math.hypot(boat.u, boat.v);
+
+function addLog(phrase, notes, system){
+  log.unshift({t:simT, phrase, notes:notes||[], system:!!system});
+  if(log.length>200) log.pop();
+  renderLog();
+}
+function sysLog(text, kind){ addLog(text, [], true); log[0].kind = kind||'info'; renderLog(); }
+
+function setSides(st){ crew.side.BB = st; crew.side.SB = st; }
+function sideList(s){ return s==='beide' ? ['BB','SB'] : [s]; }
+
+/* at: moment van de inzet van de stem (spraak) of van de klik; meta: zekerheid van de spraakherkenning */
+const momentNow = ()=> ({t:simT, phase:phaseNow(), wasRowing: crew.mode==='roeien'});
+function issue(id, side, at, meta){
+  ensureAudio();
+  const c = COMMANDS.find(c=>c.id===id);
+  const phrase = LANG.say[id](side);
+  const m = at || momentNow();
+  if(c.exec){
+    if(pending){ /* vorige aankondiging niet afgemaakt */ events.push({t:simT, label:'×', kind:'warn'}); }
+    pending = {id, side, phrase, t:m.t, phase:m.phase, wasRowing:m.wasRowing, meta};
+    if(id==='SLAGKLAAR' && crew.mode==='slagklaar') crew.ready='klaar'; // bladen verticaal in het water
+    lastSaid = {text: phrase+' …', t:simT, pending:true};
+    events.push({t:simT, label: phrase+' …', kind:'cmd'});
+    updateSaid(); updateExec(); renderCmdHighlight();
+  } else {
+    execute(id, side, phrase, null, meta);
+  }
+}
+function fireExec(at, heardWord, meta){
+  if(!pending) return;
+  ensureAudio();
+  const p = pending; pending = null;
+  p.execAt = at || momentNow();
+  const want = COMMANDS.find(c=>c.id===p.id).exec, word = LANG.exec[want];
+  const extra = [];
+  if(heardWord && heardWord!==want) extra.push({k:'warn', m:`Uitvoeringswoord hoort ‘${word}’ te zijn, niet ‘${LANG.exec[heardWord]||heardWord}’`});
+  execute(p.id, p.side, `${p.phrase} … ${word}`, p, meta || p.meta, extra);
+  renderCmdHighlight(); updateExec();
+}
+function cancelPending(){
+  if(!pending) return;
+  sysLog(`Aankondiging ‘${pending.phrase} …’ ingetrokken`, 'info');
+  pending = null; lastSaid = null; updateSaid(); updateExec(); renderCmdHighlight();
+}
+
+function execute(id, side, phrase, pend, meta, extraNotes){
+  const notes = extraNotes ? extraNotes.slice() : [];
+  const good = m=>notes.push({k:'good',m}), warn = m=>notes.push({k:'warn',m}), bad = m=>notes.push({k:'bad',m}), info = m=>notes.push({k:'info',m});
+  const rowing = crew.mode==='roeien';
+  switch(id){
+    case 'HANDEN_VLOT':
+      if(nearVlot() && speed()<0.5){ crew.mode='vlot'; setSides('plat'); boat.u=boat.v=boat.r=0; info('Ploeg houdt de boot aan het vlot vast'); }
+      else warn('Niet langs het vlot');
+      break;
+    case 'UITZETTEN':
+      if(crew.mode==='vlot' || nearVlot()){
+        crew.mode='rust'; setSides('plat');
+        // duw van het vlot af: oostwaarts in de wereld, omgerekend naar de boot
+        const ex=1, ey=0, c=Math.cos(boat.psi), s=Math.sin(boat.psi);
+        boat.u += 0.75*(ex*c + ey*s); boat.v += 0.75*(-ex*s + ey*c); boat.r -= 0.012; // boeg iets van het vlot af
+        good('Boot vrij van het vlot');
+      } else warn('Uitzetten kan alleen aan het vlot');
+      break;
+    case 'KLAPJE':
+      if(isRowing()){ warn('Tijdens het roeien geen klapje; eerst laat … lopen'); break; }
+      crew.mode='klapje'; crew.klapjeSide=side; crew.klapjeT=0; setSides('plat');
+      break;
+    case 'SLAGKLAAR_MAKEN':
+      if(isRowing()){ warn('De ploeg roeit al'); break; }
+      if(crew.mode==='vlot') warn('Je ligt nog aan het vlot; eerst uitzetten');
+      crew.mode='slagklaar'; crew.ready='maken'; setSides('plat'); crew.phase=0;
+      break;
+    case 'SLAGKLAAR': {
+      if(isRowing()){ warn('De ploeg roeit al'); break; }
+      if(crew.mode!=='slagklaar') warn('Eerst ‘slagklaar maken’');
+      crew.mode='roeien'; crew.phase=0; crew.stopAtFinish=false; crew.ready=null;
+      for(const sd of ['BB','SB']) if(crew.side[sd]!=='hoog') crew.side[sd]='roei';
+      crew.press.BB = crew.press.SB = 1;
+      sCatch();
+      if(crew.side.BB==='hoog'||crew.side.SB==='hoog') warn('Riemen hoog aan één boord: die kant roeit niet mee');
+      break; }
+    case 'LICHTE_HAAL': crew.light = true; if(!isRowing()) info('Geldt vanaf de volgende keer roeien'); break;
+    case 'NORMALE_HAAL': crew.light = false; break;
+    case 'STERK':
+      if(!rowing){ warn('Er wordt niet geroeid'); break; }
+      crew.press.BB = side==='BB' ? 1.4 : 1; crew.press.SB = side==='SB' ? 1.4 : 1;
+      info(side==='BB' ? 'Boot draait naar stuurboord' : 'Boot draait naar bakboord');
+      break;
+    case 'BEIDE_GELIJK': crew.press.BB = crew.press.SB = 1; break;
+    case 'OPGELET': info('Aankondiging'); break;
+    case 'LAAT_LOPEN': {
+      if(crew.mode==='roeien'){
+        const ex = (pend && pend.execAt) || momentNow();
+        // Spraak komt iets later binnen dan hij is uitgesproken: is de uitpik intussen al voorbij, dan stopt de ploeg meteen.
+        if(stats.lastFinishT > ex.t && simT - ex.t < 2){ crew.mode='lopen'; setSides('uit'); crew.stopAtFinish=false; info('Ploeg laat lopen'); }
+        else { crew.stopAtFinish = true; info('Ploeg stopt bij de eerstvolgende uitpik'); }
+        if(pend && pend.wasRowing){
+          stats.llTotal++;
+          const d0 = circDist(pend.phase, 0), d1 = circDist(ex.phase, P.df);
+          let ok = 0;
+          if(d0<=0.08){ good('‘Laat’ bij de inpik'); ok++; }
+          else if(d0<=0.16) warn(`‘Laat’ net naast de inpik (${where(pend.phase)})`);
+          else bad(`‘Laat’ viel ${where(pend.phase)}; hoort bij de inpik`);
+          if(d1<=0.08){ good('‘Lopen’ bij de uitpik'); ok++; }
+          else if(d1<=0.16) warn(`‘Lopen’ net naast de uitpik (${where(ex.phase)})`);
+          else bad(`‘Lopen’ viel ${where(ex.phase)}; hoort bij de uitpik`);
+          if(ok===2) stats.llGood++;
+        }
+      } else if(crew.mode==='rond' || crew.mode==='strijken'){
+        crew.mode='lopen'; setSides('uit');
+      } else warn('Er wordt niet geroeid');
+      break; }
+    case 'VASTROEIEN':
+    case 'HOUDEN': {
+      const st = id==='HOUDEN' ? 'houden' : 'vast';
+      if(crew.mode==='roeien'){ warn('Eerst ‘laat … lopen’; de ploeg stopt nu midden in de haal'); }
+      if(isRowing() || crew.mode==='slagklaar' || crew.mode==='klapje'){ crew.mode='lopen'; setSides('uit'); }
+      if(crew.mode==='vlot' || crew.mode==='rust') crew.mode='lopen';
+      for(const sd of sideList(side)) if(crew.side[sd]!=='hoog') crew.side[sd]=st;
+      if(speed()<0.15) info('De boot ligt al stil');
+      break; }
+    case 'BEDANKT':
+      if(crew.mode==='roeien') warn('Bedankt tijdens het roeien: eerst laat … lopen');
+      crew.mode = nearVlot() && speed()<0.4 ? crew.mode : 'rust';
+      if(crew.mode!=='vlot') crew.mode='rust';
+      setSides('plat'); crew.press.BB=crew.press.SB=1; crew.light=false; crew.stopAtFinish=false;
+      break;
+    case 'AANK_RONDEN': info('Aankondiging'); break;
+    case 'RONDMAKEN':
+      if(crew.mode==='roeien') warn('Eerst laat … lopen en houden');
+      else if(speed()>0.8) warn('Nog veel vaart: eerst houden');
+      crew.mode='rond'; crew.rondSide=side; crew.phase=0; setSides('roei');
+      tasks.rondStartPsi = boat.psi; tasks.rondAccum = 0; tasks.prevPsi = boat.psi;
+      break;
+    case 'STRIJKEN':
+      if(crew.mode==='roeien') warn('Eerst laat … lopen');
+      crew.mode='strijken'; crew.phase=0; crew.strijk = {BB: side!=='SB', SB: side!=='BB'};
+      for(const sd of ['BB','SB']) crew.side[sd] = crew.strijk[sd] ? 'roei' : (crew.side[sd]==='hoog'?'hoog':'plat');
+      break;
+    case 'AANK_AANLEG': info('Aankondiging; vaar onder 30–45° aan'); break;
+    case 'RIEMEN_HOOG':
+      if(crew.mode==='roeien') warn('Die kant stopt met roeien');
+      crew.side[side]='hoog';
+      break;
+  }
+  if(meta){
+    const parts = [];
+    if(meta.tech!=null) parts.push(`verstaan ${Math.round(meta.tech*100)}%`);
+    if(meta.voice!=null) parts.push(`uitspraak ${voiceWord(meta.voice)}`);
+    if(parts.length) notes.push({k: (meta.voice!=null && meta.voice<0.34) ? 'warn' : 'info', m: 'Spraak: ' + parts.join(' · ')});
+  }
+  lastSaid = {text: phrase, t:simT, pending:false};
+  events.push({t:simT, label: phrase, kind:'cmd'});
+  addLog(phrase, notes);
+  updateSaid();
+}
+const voiceWord = v => v>=0.66 ? 'gedecideerd' : v>=0.34 ? 'redelijk' : 'aarzelend of zacht';
+
+/* ---------------- Ploeg: haalcyclus en krachten ---------------- */
+const ease = q => q<0?0:q>1?1:(1-Math.cos(Math.PI*q))/2;
+const lerp = (a,b,q)=> a+(b-a)*q;
+function crewRate(){ return crew.mode==='roeien' ? S.rate : 26; }
+
+function crewUpdate(h){
+  const c = crew;
+  if(rowingModes.has(c.mode)){
+    const prev = c.phase;
+    c.phase += h*crewRate()/60;
+    const df = c.mode==='roeien' ? P.df : 0.45;
+    if(prev < df && c.phase >= df) onFinish();
+    if(c.mode==='rond' && prev < 0.5 && c.phase >= 0.5) sCatch();
+    if(c.mode==='rond' && prev < 0.95 && c.phase >= 0.95) dropPuddles();
+    if(c.phase >= 1){ c.phase -= 1; onCatch(); }
+  } else if(c.mode==='klapje'){
+    c.klapjeT += h;
+    if(c.klapjeT > 1.3){ c.mode='rust'; dropPuddles(); }
+  }
+}
+function onCatch(){ if(crew.mode!=='lopen') sCatch(); }
+function onFinish(){
+  sFinish(); dropPuddles(); stats.lastFinishT = simT;
+  if(crew.mode==='roeien' && crew.stopAtFinish){
+    crew.stopAtFinish=false; crew.mode='lopen'; setSides('uit');
+    sysLog('Ploeg laat lopen', 'info');
+  }
+}
+function sideForce(sd, u){
+  const st = crew.side[sd];
+  if(st==='hoog' || st==='uit') return 0;
+  if(st==='houden') return -P.kHold*u*Math.abs(u);
+  if(st==='vast')   return -P.kVast*u*Math.abs(u);
+  const ph = crew.phase;
+  const m = crew.mode;
+  if(st==='roei'){
+    if(m==='roeien'){
+      if(ph < P.df) return P.Fpeak*crew.press[sd]*(crew.light?0.45:1)*Math.sin(Math.PI*ph/P.df);
+      return 0;
+    }
+    if(m==='rond'){
+      const strijkSide = crew.rondSide;
+      if(sd===strijkSide){ return ph<0.45 ? -0.6*P.Fpeak*Math.sin(Math.PI*ph/0.45) : 0; }
+      return (ph>=0.5 && ph<0.95) ? 0.6*P.Fpeak*Math.sin(Math.PI*(ph-0.5)/0.45) : 0;
+    }
+    if(m==='strijken'){
+      if(crew.strijk[sd]) return ph<0.45 ? -0.6*P.Fpeak*Math.sin(Math.PI*ph/0.45) : 0;
+      return -P.kFlat*u*Math.abs(u);
+    }
+  }
+  if(m==='klapje' && sd===crew.klapjeSide){ const q = crew.klapjeT/1.3; return q<1 ? 0.45*P.Fpeak*Math.sin(Math.PI*q) : 0; }
+  return -P.kFlat*u*Math.abs(u); // bladen plat op het water
+}
+/* Bladhouding per boord, voor tekenen en voor blad-tegen-kant. */
+function oarPose(sd){
+  const c = crew, ph = c.phase, st = c.side[sd];
+  const R = {th:0, inWater:true, squared:false, raised:false, slide:0.4};
+  if(st==='hoog'){ R.raised=true; R.inWater=false; R.slide=0.3; return R; }
+  if(st==='houden'){ R.squared=true; R.slide=0; return R; }
+  if(st==='vast'){ R.squared=true; R.half=true; R.slide=0; return R; }
+  if(st==='uit'){ R.th=TH_F; R.inWater=false; R.slide=0; return R; }
+  if(c.mode==='slagklaar'){ R.th=TH_C; R.slide=1; R.squared = c.ready==='klaar'; R.inWater = true; return R; }
+  if(c.mode==='klapje'){ if(sd===c.klapjeSide){ const q=ease(c.klapjeT/1.3); R.th=lerp(30*DEG,-25*DEG,q); R.squared=true; R.slide=0; } return R; }
+  if(st==='roei'){
+    if(c.mode==='roeien'){
+      if(ph < P.df){ const q=ease(ph/P.df); R.th=lerp(TH_C,TH_F,q); R.squared=true; R.slide=1-q; }
+      else { const q=(ph-P.df)/(1-P.df); R.th=lerp(TH_F,TH_C,ease(q)); R.inWater=false; R.slide=ease(Math.max(0,(q-0.15)/0.85)); }
+      return R;
+    }
+    if(c.mode==='rond'){
+      const a=-20*DEG, b=35*DEG;
+      if(sd===c.rondSide){
+        if(ph<0.45){ const q=ease(ph/0.45); R.th=lerp(a,b,q); R.squared=true; R.slide=0.5*q; }
+        else { const q=ease((ph-0.45)/0.55); R.th=lerp(b,a,q); R.inWater=false; R.slide=0.5*(1-q); }
+      } else {
+        if(ph>=0.5 && ph<0.95){ const q=ease((ph-0.5)/0.45); R.th=lerp(b,a,q); R.squared=true; R.slide=0.5*(1-q); }
+        else { const q=ease(((ph-0.95+1)%1)/0.55); R.th=lerp(a,b,q); R.inWater=false; R.slide=0.5*q; }
+      }
+      return R;
+    }
+    if(c.mode==='strijken'){
+      if(ph<0.45){ const q=ease(ph/0.45); R.th=lerp(TH_F,TH_C,q); R.squared=true; R.slide=q; }
+      else { const q=ease((ph-0.45)/0.55); R.th=lerp(TH_C,TH_F,q); R.inWater=false; R.slide=1-q; }
+      return R;
+    }
+  }
+  return R; // plat
+}
+/* Bladpunt in bootcoördinaten (x naar de boeg, y naar bakboord) */
+function bladeBody(rx, sd, th, reach){
+  const sgn = sd==='BB' ? 1 : -1, lx = rx - 0.35, len = OUTBOARD*(reach||1);
+  return {x: lx + len*Math.sin(th), y: sgn*(LOCK_Y + len*Math.cos(th))};
+}
+const toWorld = (bx,by)=>{ const c=Math.cos(boat.psi), s=Math.sin(boat.psi); return {x: boat.x + bx*c - by*s, y: boat.y + bx*s + by*c}; };
+
+function dropPuddles(){
+  for(const sd of ['BB','SB']){
+    const p = oarPose(sd); if(!p.squared && crew.mode!=='klapje') continue;
+    for(const rw of ROWERS){ const b = bladeBody(rw.x, sd, p.th); const w = toWorld(b.x,b.y); puddles.push({x:w.x, y:w.y, t:simT}); }
+  }
+  if(puddles.length>420) puddles.splice(0, puddles.length-420);
+}
+
+/* ---------------- Natuurkunde: drie vrijheidsgraden ---------------- */
+const HULL = [[5.5,0],[3.6,0.36],[1.5,0.46],[-2,0.46],[-4.2,0.40],[-5.45,0.34],[-5.45,-0.34],[-4.2,-0.40],[-2,-0.46],[1.5,-0.46],[3.6,-0.36]];
+function step(h){
+  // roer
+  const lim = S.rudMax*DEG, rate = lim/S.rudT;
+  const dIn = (keys.BB?1:0) - (keys.SB?1:0);
+  if(dIn!==0){
+    let nd = boat.delta + dIn*rate*h;
+    if(Math.abs(nd) >= lim){ if(Math.abs(boat.delta) < lim-1e-6) sTok(); nd = Math.sign(nd)*lim; }
+    boat.delta = nd;
+  }
+  crewUpdate(h);
+
+  const {u,v,r} = boat;
+  const Fbb = sideForce('BB',u), Fsb = sideForce('SB',u);
+  const cl = Math.sin(3*boat.delta);
+  const Lr = P.kR*u*Math.abs(u)*cl;
+  const Dr = P.kRd*u*Math.abs(u)*Math.sin(boat.delta)**2;
+  const X = Fbb + Fsb - P.kx*u*Math.abs(u) - Dr;
+  const Y = -Lr - P.ky1*v - P.ky*v*Math.abs(v);
+  const N = P.dBlade*(Fsb - Fbb) + Lr*P.lR - (P.krU*Math.abs(u) + P.kr0)*r - P.kr2*r*Math.abs(r);
+  boat.u += h*(X/P.mu + v*r);
+  boat.v += h*(Y/P.mv - u*r);
+  boat.r += h*(N/P.Iz);
+  if(crew.mode==='vlot'){ boat.u*=0.92; boat.v*=0.92; boat.r*=0.92; }
+
+  const c = Math.cos(boat.psi), s = Math.sin(boat.psi);
+  const ox = boat.x, oy = boat.y, opsi = boat.psi;
+  boat.x += h*(boat.u*c - boat.v*s);
+  boat.y += h*(boat.u*s + boat.v*c);
+  boat.psi += h*boat.r;
+
+  // botsing met wal of vlot
+  let hitLand=false, hitVlot=false, hx=0, hy=0, nh=0;
+  const c2=Math.cos(boat.psi), s2=Math.sin(boat.psi);
+  for(const [bx,by] of HULL){
+    const wx = boat.x + bx*c2 - by*s2, wy = boat.y + bx*s2 + by*c2;
+    if(inVlot(wx,wy)){ hitVlot=true; hx+=bx; hy+=by; nh++; } else if(!isWater(wx,wy)){ hitLand=true; hx+=bx; hy+=by; nh++; }
+  }
+  if(hitLand || hitVlot){
+    const sp = speed();
+    boat.x=ox; boat.y=oy; boat.psi=opsi;
+    // duw de boot een klein stukje weg van het raakpunt, zodat hij niet blijft vastzitten
+    const cbx = hx/nh, cby = hy/nh, n = Math.hypot(cbx,cby)||1;
+    const bounce = ()=>{ boat.u = -0.15*boat.u - 0.12*cbx/n; boat.v = -0.15*boat.v - 0.12*cby/n; boat.r = -0.3*boat.r - 0.012*Math.sign(cbx)*Math.sign(cby); };
+    if(hitVlot && !hitLand){
+      const parallel = Math.abs(Math.cos(boat.psi)) < Math.sin(16*DEG);
+      if(sp <= 0.45 && parallel){
+        if(crew.mode!=='vlot'){
+          boat.u=boat.v=boat.r=0; crew.mode='vlot';
+          for(const sd of ['BB','SB']) if(crew.side[sd]!=='hoog') crew.side[sd]='plat';
+          if(!tasks.aan && tasks.weg){ tasks.aan=true; renderTasks(); }
+          sysLog(`Aangelegd aan het vlot (${sp.toFixed(2).replace('.',',')} m/s)`, 'good');
+          events.push({t:simT, label:'Aangelegd', kind:'good'});
+        }
+      } else {
+        bounce();
+        if(collisionCooldown<=0){ stats.collisions++; sBump(); collisionCooldown=2;
+          sysLog(parallel ? `Te hard tegen het vlot (${sp.toFixed(1).replace('.',',')} m/s)` : 'Met de punt tegen het vlot; vaar evenwijdig aan', 'bad');
+          events.push({t:simT, label:'Vlot', kind:'bad'}); }
+      }
+    } else {
+      bounce();
+      if(collisionCooldown<=0){ stats.collisions++; sBump(); collisionCooldown=2;
+        sysLog(sp>0.6 ? `Aanvaring met de wal (${sp.toFixed(1).replace('.',',')} m/s)` : 'Tegen de kant', 'bad');
+        events.push({t:simT, label:'Wal', kind:'bad'}); }
+    }
+  }
+  collisionCooldown -= h; bladeCooldown.BB -= h; bladeCooldown.SB -= h;
+
+  // statistiek van het sturen
+  const ad = Math.abs(boat.delta);
+  if(crew.mode==='roeien' && ad > 3*DEG){ if(crew.phase < P.df) stats.steerDrive += h; else stats.steerRec += h; }
+  if(ad > 30*DEG && Math.abs(boat.u) > 0.3) stats.over30 += h;
+  if(ad > 8*DEG){
+    const sg = Math.sign(boat.delta);
+    if(stats.lastSig && sg !== stats.lastSig && simT - stats.lastSigT < 4) stats.reversals++;
+    stats.lastSig = sg; stats.lastSigT = simT;
+  }
+  // oefening
+  if(!tasks.weg && Math.hypot(boat.x - START.x, boat.y - START.y) > 12 && crew.mode!=='vlot'){ tasks.weg=true; renderTasks(); }
+  if(!tasks.bocht && boat.y > 450 && boat.x < 22){ tasks.bocht=true; renderTasks(); sysLog('Bocht bereikt', 'good'); }
+  if(crew.mode==='rond' && tasks.prevPsi!==null){
+    tasks.rondAccum += Math.abs(boat.psi - tasks.prevPsi); tasks.prevPsi = boat.psi;
+    if(!tasks.rond && tasks.rondAccum > 150*DEG){ tasks.rond=true; renderTasks(); sysLog('Rondgemaakt', 'good'); }
+  }
+  simT += h;
+}
+function bladeChecks(){
+  if(crew.mode==='vlot' || crew.mode==='rust') return;
+  for(const sd of ['BB','SB']){
+    const p = oarPose(sd); if(p.raised || bladeCooldown[sd]>0) continue;
+    for(const rw of [ROWERS[0], ROWERS[3]]){
+      const b = bladeBody(rw.x, sd, p.th); const w = toWorld(b.x,b.y);
+      if(inVlot(w.x,w.y) || !isWater(w.x,w.y)){
+        bladeCooldown[sd]=3; stats.bladeHits++;
+        sysLog(`Bladen ${sd} raken ${inVlot(w.x,w.y)?'het vlot':'de kant'}${crew.mode==='lopen'?'; riemen hoog aan die kant':''}`, 'warn');
+        events.push({t:simT, label:`Blad ${sd}`, kind:'warn'});
+        break;
+      }
+    }
+  }
+}
+
+/* ---------------- Oevers en bebouwing (vast patroon) ---------------- */
+function rng(seed){ return ()=>{ seed=(seed*1664525+1013904223)>>>0; return seed/4294967296; }; }
+const DECOR = {reeds:[], trees:[], houses:[], walls:[], ripples:[]};
+(function buildDecor(){
+  const R = rng(7);
+  const bank = (axis, fixed, from, to, side, type)=>{ // side: +1 = land in + richting
+    if(type==='riet'){ for(let t=from;t<to;t+=0.7){ const d=R()*3.2; DECOR.reeds.push(axis==='y'?{x:fixed+side*(0.3+d), y:t+R()*0.6}:{x:t+R()*0.6, y:fixed+side*(0.3+d)}); } }
+    if(type==='bomen'){ for(let t=from;t<to;t+=5+R()*6){ const d=4+R()*7, rad=2.2+R()*2.6; DECOR.trees.push(axis==='y'?{x:fixed+side*d, y:t, r:rad}:{x:t, y:fixed+side*d, r:rad}); } }
+    if(type==='huizen'){ for(let t=from;t<to;t+=12+R()*5){ const d=9+R()*4, w=7+R()*2, l=9+R()*3, roof=R()<0.6?0:1; DECOR.houses.push(axis==='y'?{x:fixed+side*(d+l/2), y:t+w/2, w:l, h:w, roof}:{x:t+w/2, y:fixed+side*(d+l/2), w, h:l, roof}); } }
+    if(type==='damwand'||type==='beton'){ DECOR.walls.push({axis, fixed, from, to, side, type}); }
+  };
+  // westoever (land naar -x)
+  bank('y', W1.x0, -60, -8, -1, 'riet');
+  bank('y', W1.x0, 24, 210, -1, 'riet');
+  bank('y', W1.x0, 210, 380, -1, 'damwand');
+  bank('y', W1.x0, 380, 700, -1, 'huizen');
+  bank('y', W1.x0, 210, 380, -1, 'bomen');
+  // oostoever (land naar +x)
+  bank('y', W1.x1, -60, 250, 1, 'bomen');
+  bank('y', W1.x1, 250, 450, 1, 'riet');
+  bank('y', W1.x1, 450, 640, 1, 'bomen');
+  // bocht: noordoever (land naar +y) en zuidoever (land naar -y)
+  bank('x', W2.y1, -22, 620, 1, 'bomen');
+  bank('x', W2.y0, 22, 200, -1, 'riet');
+  bank('x', W2.y0, 200, 330, -1, 'beton');
+  bank('x', W2.y0, 330, 620, -1, 'huizen');
+  for(let i=0;i<500;i++){ const inW2 = R()<0.35; const x = inW2 ? lerp(W2.x0,W2.x1,R()) : lerp(W1.x0,W1.x1,R()); const y = inW2 ? lerp(W2.y0,W2.y1,R()) : lerp(W1.y0,W1.y1,R()); DECOR.ripples.push({x,y,a:R()*Math.PI,l:1+R()*2}); }
+})();
+
+/* ---------------- Tekenen ---------------- */
+const cv = document.getElementById('sim'), ctx = cv.getContext('2d');
+const tlc = document.getElementById('tl'), tctx = tlc.getContext('2d');
+let W=0,H=0,DPR=1, TW=0,TH=0;
+function resize(){
+  DPR = Math.min(window.devicePixelRatio||1, 2);
+  const r = cv.getBoundingClientRect(); W=r.width; H=r.height; cv.width=Math.round(W*DPR); cv.height=Math.round(H*DPR);
+  const t = tlc.getBoundingClientRect(); TW=t.width; TH=t.height; tlc.width=Math.round(TW*DPR); tlc.height=Math.round(TH*DPR);
+}
+new ResizeObserver(resize).observe(cv); new ResizeObserver(resize).observe(tlc);
+
+const COL = {grass:'#7f9a5b', grass2:'#748f50', water:'#3d6b79', water2:'#4a7a87', reed:'#a7a35d', reedDark:'#7d7a3f', tree:'#3f6b3a', treeHi:'#55834b', shadow:'rgba(10,25,20,.28)',
+  vlot:'#a77d52', vlotLine:'#7c5a39', hull:'#f3f1ea', hullLine:'#545a5c', rigger:'#9aa3a6', shaft:'#1d2326', blade:'#f2c230', bladeTip:'#1b1b1b', shirt:'#24518f', skin:'#d9a47f', cox:'#c0392b', wall:'#5d6366', beton:'#b9bcb8', paving:'#a9ab9e', roof0:'#8f4a35', roof1:'#3d4448', house:'#d8d2c4', boathouse:'#6b4f3a'};
+
+function camRot(){ return S.headUp ? Math.PI/2 - boat.psi : 0; }
+function screenOf(x,y){
+  const sc=S.zoom, rot=camRot(), cx=W/2, cy=S.headUp?H*0.64:H/2;
+  const dx=x-boat.x, dy=y-boat.y, rx=dx*Math.cos(rot)-dy*Math.sin(rot), ry=dx*Math.sin(rot)+dy*Math.cos(rot);
+  return {x: cx+rx*sc, y: cy-ry*sc};
+}
+function rectPath(c,r){ c.beginPath(); c.rect(r.x0, r.y0, r.x1-r.x0, r.y1-r.y0); }
+
+function drawWorld(){
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.fillStyle = COL.grass; ctx.fillRect(0,0,W,H);
+  const sc=S.zoom, cx=W/2, cy=S.headUp?H*0.64:H/2;
+  ctx.save();
+  ctx.translate(cx,cy); ctx.scale(sc,-sc); ctx.rotate(camRot()); ctx.translate(-boat.x,-boat.y);
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  // gemaaide strook langs het water
+  ctx.fillStyle = COL.grass2;
+  for(const r of [W1,W2]){ ctx.fillRect(r.x0-3, r.y0-3, r.x1-r.x0+6, r.y1-r.y0+6); }
+  // water
+  ctx.fillStyle = COL.water; rectPath(ctx,W1); ctx.fill(); rectPath(ctx,W2); ctx.fill();
+  ctx.strokeStyle = COL.water2; ctx.lineWidth = 0.18;
+  for(const p of DECOR.ripples){ ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x+p.l*Math.cos(p.a), p.y+p.l*0.25); ctx.stroke(); }
+  // walkanten
+  for(const w of DECOR.walls){
+    ctx.strokeStyle = w.type==='damwand' ? COL.wall : COL.beton; ctx.lineWidth = w.type==='damwand' ? 0.45 : 0.8;
+    ctx.beginPath();
+    if(w.axis==='y'){ ctx.moveTo(w.fixed + w.side*0.2, w.from); ctx.lineTo(w.fixed + w.side*0.2, w.to); }
+    else { ctx.moveTo(w.from, w.fixed + w.side*0.2); ctx.lineTo(w.to, w.fixed + w.side*0.2); }
+    ctx.stroke();
+    ctx.fillStyle = COL.paving;
+    if(w.axis==='y') ctx.fillRect(Math.min(w.fixed+w.side*0.45, w.fixed+w.side*3.5), w.from, 3.05, w.to-w.from);
+    else ctx.fillRect(w.from, Math.min(w.fixed+w.side*0.45, w.fixed+w.side*3.5), w.to-w.from, 3.05);
+  }
+  // riet
+  ctx.lineWidth = 0.14;
+  for(const p of DECOR.reeds){ ctx.strokeStyle = (p.x*7+p.y*3)%2>1 ? COL.reed : COL.reedDark; ctx.beginPath(); ctx.moveTo(p.x-0.25,p.y-0.25); ctx.lineTo(p.x+0.25,p.y+0.3); ctx.stroke(); }
+  // huizen en botenhuis
+  const house = (x,y,w,h,roof)=>{ ctx.fillStyle=COL.shadow; ctx.fillRect(x-w/2+0.6,y-h/2-0.6,w,h); ctx.fillStyle = roof? COL.roof1 : COL.roof0; ctx.fillRect(x-w/2,y-h/2,w,h); ctx.strokeStyle='rgba(0,0,0,.25)'; ctx.lineWidth=0.15; ctx.beginPath(); if(w>h){ctx.moveTo(x-w/2,y);ctx.lineTo(x+w/2,y);}else{ctx.moveTo(x,y-h/2);ctx.lineTo(x,y+h/2);} ctx.stroke(); };
+  for(const hs of DECOR.houses) house(hs.x,hs.y,hs.w,hs.h,hs.roof);
+  ctx.fillStyle=COL.shadow; ctx.fillRect(BOTENHUIS.x0+0.8,BOTENHUIS.y0-0.8,BOTENHUIS.x1-BOTENHUIS.x0,BOTENHUIS.y1-BOTENHUIS.y0);
+  ctx.fillStyle=COL.boathouse; rectPath(ctx,BOTENHUIS); ctx.fill();
+  ctx.fillStyle=COL.paving; ctx.fillRect(-29,-2,7,22);
+  // bomen
+  for(const t of DECOR.trees){ ctx.fillStyle=COL.shadow; ctx.beginPath(); ctx.arc(t.x+0.7,t.y-0.7,t.r,0,7); ctx.fill(); }
+  for(const t of DECOR.trees){ ctx.fillStyle=COL.tree; ctx.beginPath(); ctx.arc(t.x,t.y,t.r,0,7); ctx.fill(); ctx.fillStyle=COL.treeHi; ctx.beginPath(); ctx.arc(t.x-t.r*0.25,t.y+t.r*0.25,t.r*0.55,0,7); ctx.fill(); }
+  // vlot
+  ctx.fillStyle=COL.shadow; ctx.fillRect(VLOT.x0+0.25,VLOT.y0-0.25,VLOT.x1-VLOT.x0,VLOT.y1-VLOT.y0);
+  ctx.fillStyle=COL.vlot; rectPath(ctx,VLOT); ctx.fill();
+  ctx.strokeStyle=COL.vlotLine; ctx.lineWidth=0.06;
+  for(let y=VLOT.y0+0.5;y<VLOT.y1;y+=0.5){ ctx.beginPath(); ctx.moveTo(VLOT.x0,y); ctx.lineTo(VLOT.x1,y); ctx.stroke(); }
+  // plassen van de bladen en kielzog
+  for(const p of puddles){ const age=simT-p.t; if(age>14) continue; const a=Math.max(0,1-age/14); ctx.strokeStyle=`rgba(225,240,240,${0.55*a})`; ctx.lineWidth=0.09; ctx.beginPath(); ctx.arc(p.x,p.y,0.25+age*0.06,0,7); ctx.stroke(); }
+  if(wake.length>1){ ctx.lineWidth=0.35; for(let i=1;i<wake.length;i++){ const a=Math.max(0,1-(simT-wake[i].t)/10); ctx.strokeStyle=`rgba(220,236,238,${0.35*a})`; ctx.beginPath(); ctx.moveTo(wake[i-1].x,wake[i-1].y); ctx.lineTo(wake[i].x,wake[i].y); ctx.stroke(); } }
+  drawBoat();
+  ctx.restore();
+}
+
+function drawBoat(){
+  ctx.save();
+  ctx.translate(boat.x, boat.y); ctx.rotate(boat.psi);
+  // schaduw
+  ctx.fillStyle=COL.shadow; ctx.beginPath(); HULL.forEach(([x,y],i)=> i?ctx.lineTo(x+0.25,y-0.25):ctx.moveTo(x+0.25,y-0.25)); ctx.closePath(); ctx.fill();
+  // riemen eerst (onder de romp)
+  for(const sd of ['BB','SB']){
+    const p = oarPose(sd), sgn = sd==='BB'?1:-1;
+    for(const rw of ROWERS){
+      const lx = rw.x-0.35, ly = sgn*LOCK_Y;
+      const reach = p.raised ? 0.82 : 1;
+      const b = bladeBody(rw.x, sd, p.th, reach);
+      const hx = lx - INBOARD*Math.sin(p.th), hy = sgn*(LOCK_Y - INBOARD*Math.cos(p.th));
+      // rigger
+      ctx.strokeStyle=COL.rigger; ctx.lineWidth=0.05; ctx.beginPath(); ctx.moveTo(rw.x-0.1, sgn*0.42); ctx.lineTo(lx, ly); ctx.lineTo(rw.x-0.75, sgn*0.42); ctx.stroke();
+      // steel
+      ctx.strokeStyle=COL.shaft; ctx.lineWidth=0.045; ctx.beginPath(); ctx.moveTo(hx,hy); ctx.lineTo(b.x,b.y); ctx.stroke();
+      // blad
+      const ang = Math.atan2(b.y-ly, b.x-lx);
+      ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(ang);
+      const bw = p.squared ? (p.half?0.13:0.19) : 0.07;
+      ctx.globalAlpha = p.raised ? 0.75 : 1;
+      ctx.fillStyle=COL.blade; ctx.fillRect(-0.48,-bw/2,0.5,bw);
+      ctx.fillStyle=COL.bladeTip; ctx.fillRect(-0.06,-bw/2,0.08,bw);
+      ctx.globalAlpha=1;
+      if(p.inWater && p.squared){ ctx.strokeStyle='rgba(235,248,250,.75)'; ctx.lineWidth=0.05; ctx.beginPath(); ctx.ellipse(-0.22,0,0.34,bw*0.9+0.06,0,0,7); ctx.stroke(); }
+      ctx.restore();
+    }
+  }
+  // romp
+  ctx.fillStyle=COL.hull; ctx.strokeStyle=COL.hullLine; ctx.lineWidth=0.05;
+  ctx.beginPath(); HULL.forEach(([x,y],i)=> i?ctx.lineTo(x,y):ctx.moveTo(x,y)); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle='rgba(80,90,92,.5)'; ctx.lineWidth=0.03; ctx.beginPath(); ctx.moveTo(5.2,0); ctx.lineTo(-5.4,0); ctx.stroke();
+  // roer aan de spiegel
+  ctx.save(); ctx.translate(-5.45,0); ctx.rotate(-boat.delta); ctx.fillStyle='#e9e6dc'; ctx.strokeStyle=COL.hullLine; ctx.lineWidth=0.03; ctx.fillRect(-0.42,-0.025,0.42,0.05); ctx.strokeRect(-0.42,-0.025,0.42,0.05); ctx.restore();
+  // roeiers (kijken naar het hek)
+  const pBB = oarPose('BB'), pSB = oarPose('SB');
+  for(const rw of ROWERS){
+    const slide = Math.max(pBB.slide, pSB.slide);
+    const sx = rw.x + 0.25 - 0.5*slide;
+    ctx.fillStyle='#2b2f31'; ctx.fillRect(rw.x-0.6, -0.12, 0.75, 0.24); // slidings
+    // armen naar de handvatten
+    ctx.strokeStyle=COL.skin; ctx.lineWidth=0.07;
+    for(const [sd,p] of [['BB',pBB],['SB',pSB]]){ const sgn=sd==='BB'?1:-1; const lx=rw.x-0.35; const hx=lx-INBOARD*Math.sin(p.th), hy=sgn*(LOCK_Y-INBOARD*Math.cos(p.th)); ctx.beginPath(); ctx.moveTo(sx-0.12, sgn*0.17); ctx.lineTo(hx, hy); ctx.stroke(); }
+    ctx.fillStyle=COL.shirt; ctx.beginPath(); ctx.ellipse(sx, 0, 0.17, 0.22, 0, 0, 7); ctx.fill();
+    ctx.fillStyle=COL.skin; ctx.beginPath(); ctx.arc(sx-0.1, 0, 0.1, 0, 7); ctx.fill();
+  }
+  // stuur
+  ctx.fillStyle=COL.cox; ctx.beginPath(); ctx.ellipse(COX_X, 0, 0.17, 0.2, 0, 0, 7); ctx.fill();
+  ctx.fillStyle=COL.skin; ctx.beginPath(); ctx.arc(COX_X+0.11, 0, 0.1, 0, 7); ctx.fill();
+  ctx.restore();
+}
+
+function roundRect(c,x,y,w,h,r){ c.beginPath(); c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r); c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath(); }
+const MODE_NAME = {vlot:'aan het vlot', rust:'bladen plat', slagklaar:'slagklaar', roeien:'roeien', lopen:'laat lopen', rond:'rondmaken', strijken:'strijken', klapje:'klapje'};
+function crewStateText(){
+  let t = MODE_NAME[crew.mode]||crew.mode;
+  if(crew.mode==='roeien'){ if(crew.light) t+=', lichte haal'; if(crew.press.BB>1) t+=', bakboord best'; if(crew.press.SB>1) t+=', stuurboord sterk'; }
+  const extra=[]; for(const sd of ['BB','SB']){ const st=crew.side[sd]; if(st==='houden') extra.push(`houden ${sd}`); if(st==='vast') extra.push(`vast ${sd}`); if(st==='hoog') extra.push(`${sd} hoog`); }
+  if(extra.length) t += ' · ' + extra.join(', ');
+  return t;
+}
+function drawHUD(){
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  const sp = Math.max(0, boat.u);
+  const split = sp>0.25 ? (()=>{ const s=500/sp; return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`; })() : '–';
+  const lines = [
+    ['SNELHEID', `${sp.toFixed(1).replace('.',',')} m/s`],
+    ['SPLIT', `${split} /500 m`],
+    ['TEMPO', isRowing()? `${crewRate()}` : '–'],
+    ['PLOEG', crewStateText()],
+  ];
+  ctx.font = '600 12px "Barlow Condensed", "Arial Narrow", sans-serif';
+  const pad=10, lh=19; let wmax = 0;
+  ctx.font = '600 15px "Barlow Condensed", "Arial Narrow", sans-serif';
+  for(const [,v] of lines) wmax = Math.max(wmax, ctx.measureText(v).width);
+  const bw = Math.min(W-24, 78 + wmax + pad*2), bh = lines.length*lh + pad*1.4;
+  ctx.fillStyle='rgba(12,24,28,.72)'; roundRect(ctx, 12, 12, bw, bh, 6); ctx.fill();
+  lines.forEach(([k,v],i)=>{
+    const y = 12 + pad + 11 + i*lh;
+    ctx.font='600 11.5px "Barlow Condensed", "Arial Narrow", sans-serif'; ctx.fillStyle='rgba(205,225,228,.75)'; ctx.fillText(k, 12+pad, y);
+    ctx.font='600 15px "Barlow Condensed", "Arial Narrow", sans-serif'; ctx.fillStyle='#eef6f7'; ctx.fillText(v, 12+pad+74, y);
+  });
+  // roerstand (alleen voor de instructeur)
+  if(S.showRud){
+    const gx = W/2, gy = H-26, R=46;
+    ctx.fillStyle='rgba(12,24,28,.72)'; roundRect(ctx, gx-R-16, gy-R-10, 2*R+32, R+26, 6); ctx.fill();
+    ctx.strokeStyle='rgba(220,236,238,.5)'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(gx, gy, R, Math.PI, 2*Math.PI); ctx.stroke();
+    for(const dg of [-30,30]){ const a = -Math.PI/2 + dg*DEG*(Math.PI/2)/(S.rudMax*DEG); ctx.strokeStyle='rgba(236,123,112,.9)'; ctx.beginPath(); ctx.moveTo(gx+Math.cos(a)*(R-6), gy+Math.sin(a)*(R-6)); ctx.lineTo(gx+Math.cos(a)*(R+4), gy+Math.sin(a)*(R+4)); ctx.stroke(); }
+    const a = -Math.PI/2 - boat.delta*(Math.PI/2)/(S.rudMax*DEG);
+    ctx.strokeStyle='#f2c230'; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(gx,gy); ctx.lineTo(gx+Math.cos(a)*R, gy+Math.sin(a)*R); ctx.stroke();
+    ctx.font='600 13px "Barlow Condensed", "Arial Narrow", sans-serif'; ctx.fillStyle='#eef6f7'; ctx.textAlign='center';
+    ctx.fillText(`roer ${Math.abs(boat.delta/DEG).toFixed(0)}° ${boat.delta>0.5*DEG?'BB':boat.delta<-0.5*DEG?'SB':''}`, gx, gy+12); ctx.textAlign='left';
+  }
+  // labels in de wereld
+  ctx.font='600 13px "Barlow Condensed", "Arial Narrow", sans-serif'; ctx.textAlign='center';
+  const lab = (x,y,t)=>{ const p=screenOf(x,y); if(p.x<-40||p.x>W+40||p.y<-20||p.y>H+20) return; ctx.fillStyle='rgba(12,24,28,.6)'; const w=ctx.measureText(t).width+10; roundRect(ctx,p.x-w/2,p.y-9,w,18,4); ctx.fill(); ctx.fillStyle='#f3f6f5'; ctx.fillText(t,p.x,p.y+4); };
+  lab(-20.5, 5, 'Vlot'); lab(-38.5, 9, 'Botenhuis'); lab(0, 450, '450 m'); lab(0, 250, '250 m');
+  ctx.textAlign='left';
+  // kaartje
+  const mw=118, mh=150, mx=W-mw-12, my=12;
+  ctx.fillStyle='rgba(12,24,28,.72)'; roundRect(ctx,mx,my,mw,mh,6); ctx.fill();
+  const bx0=-60,bx1=640,by0=-80,by1=720; const ms=Math.min((mw-16)/(bx1-bx0),(mh-16)/(by1-by0));
+  const mp=(x,y)=>({x: mx+8+(x-bx0)*ms, y: my+mh-8-(y-by0)*ms});
+  ctx.fillStyle='#4f8090';
+  for(const r of [W1,W2]){ const a=mp(r.x0,r.y1), b=mp(r.x1,r.y0); ctx.fillRect(a.x,a.y,b.x-a.x,b.y-a.y); }
+  ctx.fillStyle=COL.vlot; { const a=mp(VLOT.x0-3,VLOT.y1+3), b=mp(VLOT.x1,VLOT.y0-3); ctx.fillRect(a.x,a.y,Math.max(2,b.x-a.x),Math.max(2,b.y-a.y)); }
+  const bp=mp(boat.x,boat.y); ctx.fillStyle='#f2c230'; ctx.beginPath(); ctx.arc(bp.x,bp.y,3,0,7); ctx.fill();
+  ctx.strokeStyle='#f2c230'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(bp.x,bp.y); ctx.lineTo(bp.x+Math.cos(boat.psi)*9, bp.y-Math.sin(boat.psi)*9); ctx.stroke();
+  ctx.font='600 10.5px "Barlow Condensed", "Arial Narrow", sans-serif'; ctx.fillStyle='rgba(220,236,238,.8)'; ctx.fillText('N', mx+mw-14, my+16);
+  if(paused){ ctx.fillStyle='rgba(12,24,28,.55)'; ctx.fillRect(0,0,W,H); ctx.fillStyle='#fff'; ctx.font='700 34px "Barlow Condensed", "Arial Narrow", sans-serif'; ctx.textAlign='center'; ctx.fillText('PAUZE', W/2, H/2); ctx.textAlign='left'; }
+}
+
+/* ---------------- Tijdlijn ---------------- */
+let tokCache = null, tokAge = 0;
+function tokens(){
+  if(!tokCache || ++tokAge > 60){
+    tokAge = 0; const cs = getComputedStyle(document.documentElement); const g = n => cs.getPropertyValue(n).trim();
+    tokCache = {ink:g('--ink'), muted:g('--muted'), line:g('--line'), accent:g('--accent'), bad:g('--bad'), warn:g('--warn'), good:g('--good'), sunk:g('--sunk')};
+  }
+  return tokCache;
+}
+function drawTimeline(){
+  const c = tctx; c.setTransform(DPR,0,0,DPR,0,0); c.clearRect(0,0,TW,TH);
+  const {ink, muted, line, accent, bad, warn, good, sunk} = tokens();
+  const WIN=60, t1=Math.max(simT, WIN), t0=t1-WIN, L=58, R=TW-8;
+  const X = t => L + (t-t0)/WIN*(R-L);
+  const rowCmd = {y:6, h:44}, rowHaal = {y:56, h:18}, rowRoer = {y:82, h:TH-82-18};
+  c.font = '600 12px "Barlow Condensed", "Arial Narrow", sans-serif'; c.fillStyle = muted;
+  c.fillText('COMMANDO', 4, rowCmd.y+14); c.fillText('HAAL', 4, rowHaal.y+13); c.fillText('ROER', 4, rowRoer.y+14);
+  c.font = '500 11px "Atkinson Hyperlegible", system-ui, sans-serif'; c.fillText('BB', 30, rowRoer.y+12); c.fillText('SB', 30, rowRoer.y+rowRoer.h-4);
+  // haal: banden voor de haal (blad in het water)
+  c.fillStyle = sunk; c.fillRect(L, rowHaal.y, R-L, rowHaal.h);
+  c.fillStyle = accent;
+  let runStart=null;
+  for(let i=0;i<samples.length;i++){
+    const s=samples[i]; if(s.t<t0){ continue; }
+    if(s.drive && runStart===null) runStart=s.t;
+    if((!s.drive || i===samples.length-1) && runStart!==null){ c.fillRect(X(runStart), rowHaal.y, Math.max(1,X(s.t)-X(runStart)), rowHaal.h); runStart=null; }
+  }
+  // roer
+  const mid = rowRoer.y + rowRoer.h/2, half = rowRoer.h/2 - 2, scaleD = d => mid - d/(45*DEG)*half;
+  c.fillStyle = sunk; c.fillRect(L, rowRoer.y, R-L, rowRoer.h);
+  c.fillStyle = 'rgba(200,80,70,.12)'; c.fillRect(L, rowRoer.y, R-L, scaleD(30*DEG)-rowRoer.y); c.fillRect(L, scaleD(-30*DEG), R-L, rowRoer.y+rowRoer.h-scaleD(-30*DEG));
+  c.strokeStyle = line; c.lineWidth=1; c.beginPath(); c.moveTo(L,mid); c.lineTo(R,mid); c.stroke();
+  c.fillStyle = muted; c.fillText('30°', R-26, scaleD(30*DEG)-3);
+  c.strokeStyle = ink; c.lineWidth = 1.6; c.beginPath(); let started=false;
+  for(const s of samples){ if(s.t<t0) continue; const x=X(s.t), y=scaleD(s.delta); if(!started){c.moveTo(x,y);started=true;} else c.lineTo(x,y); }
+  c.stroke();
+  // commando's
+  c.font = '600 12px "Barlow Condensed", "Arial Narrow", sans-serif';
+  let lane=0, lastX=-999;
+  for(const e of events){
+    if(e.t<t0) continue; const x=X(e.t);
+    const col = e.kind==='bad'?bad : e.kind==='warn'?warn : e.kind==='good'?good : accent;
+    lane = (x-lastX < 120) ? 1-lane : 0; lastX = x;
+    c.strokeStyle = col; c.lineWidth=1.5; c.beginPath(); c.moveTo(x, rowCmd.y+ (lane?22:4)); c.lineTo(x, rowRoer.y+rowRoer.h); c.globalAlpha=0.55; c.stroke(); c.globalAlpha=1;
+    c.fillStyle = col; const txt = e.label.length>34 ? e.label.slice(0,33)+'…' : e.label;
+    const tw = c.measureText(txt).width; const tx = Math.min(x+3, R-tw);
+    c.fillText(txt, tx, rowCmd.y + 14 + lane*20);
+  }
+  // tijdas
+  c.fillStyle = muted; c.font='500 11px "Atkinson Hyperlegible", system-ui, sans-serif';
+  for(let t=Math.ceil(t0/10)*10; t<=t1; t+=10){ const x=X(t); c.fillText(fmtT(t), x-10, TH-3); }
+}
+
+/* ---------------- Interface ---------------- */
+const $ = id => document.getElementById(id);
+const cmdBox = $('cmds');
+function buildCmds(){
+  const groups = {};
+  for(const c of COMMANDS){ (groups[c.group] ||= []).push(c); }
+  for(const [g, list] of Object.entries(groups)){
+    const wrap = document.createElement('div'); wrap.className='cmd-group';
+    const h = document.createElement('div'); h.className='sec-title'; h.style.margin='0'; h.textContent = LANG.groups[g]; wrap.appendChild(h);
+    for(const c of list){
+      if(c.sides){
+        const row = document.createElement('div'); row.className='cmd-row';
+        const lbl = document.createElement('span'); lbl.className='lbl'; lbl.innerHTML = LANG.row[c.id].replace('…','<span class="x">…</span>'); row.appendChild(lbl);
+        const chips = document.createElement('span'); chips.className='chips';
+        for(const s of c.sides){ const b=document.createElement('button'); b.type='button'; b.className='chip'; b.textContent=LANG.chip[s]; b.title = LANG.say[c.id](s) + (c.exec?` … ${LANG.exec[c.exec]}`:''); b.dataset.id=c.id; b.dataset.side=s; b.addEventListener('click', ()=>{ issue(c.id, s); b.blur(); }); chips.appendChild(b); }
+        row.appendChild(chips); wrap.appendChild(row);
+      } else {
+        const b = document.createElement('button'); b.type='button'; b.className='cmd'; b.dataset.id=c.id;
+        b.innerHTML = LANG.row[c.id].replace('…','<span class="x">…</span>');
+        if(c.id==='NORMALE_HAAL') b.title='Werknaam; terminologie nog te bevestigen';
+        b.addEventListener('click', ()=>{ issue(c.id, null); b.blur(); });
+        wrap.appendChild(b);
+      }
+    }
+    cmdBox.appendChild(wrap);
+  }
+}
+function renderCmdHighlight(){
+  document.querySelectorAll('.cmd, .chip').forEach(el=>{
+    const on = pending && el.dataset.id===pending.id && (el.dataset.side||null)===(pending.side||null);
+    el.classList.toggle('pending', !!on);
+  });
+}
+function updateExec(){
+  const b = $('exec');
+  if(pending){ const w = LANG.exec[COMMANDS.find(c=>c.id===pending.id).exec]; $('execWord').textContent = w; b.disabled=false; b.setAttribute('aria-label', `Uitvoeringswoord: ${w}`); }
+  else { $('execWord').textContent = '…'; b.disabled=true; b.setAttribute('aria-label','Geen commando aangekondigd'); }
+}
+function updateSaid(){
+  if(!lastSaid){ $('saidLabel').textContent='Laatste commando'; $('saidText').textContent='Nog niets gezegd'; return; }
+  $('saidLabel').textContent = lastSaid.pending ? 'Aangekondigd, wacht op het uitvoeringswoord' : 'Gezegd';
+  $('saidText').textContent = lastSaid.text;
+}
+function renderLog(){
+  const ol = $('log');
+  if(!log.length){ ol.innerHTML = '<li class="empty" style="display:block;border:none">Je ligt aan het vlot, bakboord langszij. Begin met <b>Uitzetten gelijk … nu</b>.</li>'; return; }
+  ol.innerHTML = '';
+  for(const e of log.slice(0,80)){
+    const li = document.createElement('li');
+    const t = document.createElement('span'); t.className='t'; t.textContent = fmtT(e.t); li.appendChild(t);
+    const body = document.createElement('div');
+    const ph = document.createElement('span'); ph.className = e.system ? 'sys' : 'phrase'; ph.textContent = e.system ? e.phrase : `‘${e.phrase}’`;
+    if(e.system && e.kind && e.kind!=='info') ph.className = `n ${e.kind}`;
+    body.appendChild(ph);
+    for(const n of e.notes){ const s=document.createElement('span'); s.className=`n ${n.k}`; s.textContent=n.m; body.appendChild(s); }
+    li.appendChild(body); ol.appendChild(li);
+  }
+}
+function renderTasks(){ document.querySelectorAll('#tasks li').forEach(li=> li.classList.toggle('done', !!tasks[li.dataset.k])); }
+function renderMetrics(){
+  const steer = stats.steerDrive + stats.steerRec;
+  const pctDrive = steer>0.5 ? Math.round(100*stats.steerDrive/steer) : null;
+  const items = [
+    {k:'Sturen tijdens de haal', v: pctDrive===null?'–':`${pctDrive}%`, c: pctDrive===null?'':pctDrive<=35?'good':pctDrive<=55?'warn':'bad', hint:'van de roertijd; corrigeer in de recover'},
+    {k:'Roer boven 30°', v:`${stats.over30.toFixed(1).replace('.',',')} s`, c: stats.over30<1?'good':stats.over30<5?'warn':'bad'},
+    {k:'Tegensturen', v:`${stats.reversals}×`, c: stats.reversals<=2?'good':stats.reversals<=6?'warn':'bad'},
+    {k:'Laat … lopen op tijd', v: stats.llTotal?`${stats.llGood} van ${stats.llTotal}`:'–', c: !stats.llTotal?'':stats.llGood===stats.llTotal?'good':stats.llGood?'warn':'bad'},
+    {k:'Aanvaringen', v:`${stats.collisions}`, c: stats.collisions?'bad':'good'},
+    {k:'Blad tegen kant of vlot', v:`${stats.bladeHits}`, c: stats.bladeHits?'warn':'good'},
+  ];
+  $('metrics').innerHTML = items.map(i=>`<div class="metric"><div class="k">${i.k}</div><div class="v ${i.c}">${i.v}</div></div>`).join('');
+}
+
+/* Roer: toetsen en knoppen */
+function setKey(sd, on){ keys[sd]=on; $(sd==='BB'?'rBB':'rSB').classList.toggle('on', on); }
+for(const [id,sd] of [['rBB','BB'],['rSB','SB']]){
+  const el = $(id);
+  el.addEventListener('pointerdown', e=>{ e.preventDefault(); ensureAudio(); el.setPointerCapture(e.pointerId); setKey(sd,true); });
+  const off = ()=> setKey(sd,false);
+  el.addEventListener('pointerup', off); el.addEventListener('pointercancel', off); el.addEventListener('lostpointercapture', off);
+}
+const isField = el => el && (el.tagName==='INPUT' || el.tagName==='SELECT' || el.tagName==='TEXTAREA');
+document.addEventListener('keydown', e=>{
+  if(isField(e.target) && e.code!=='Space') return;
+  if(e.code==='ArrowLeft' || e.code==='KeyA'){ e.preventDefault(); ensureAudio(); setKey('BB',true); }
+  else if(e.code==='ArrowRight' || e.code==='KeyD'){ e.preventDefault(); ensureAudio(); setKey('SB',true); }
+  else if(e.code==='Space'){ e.preventDefault(); if(!e.repeat) fireExec(); }
+  else if(e.code==='Escape'){ cancelPending(); }
+  else if(e.code==='KeyP'){ togglePause(); }
+  else if(e.code==='KeyM'){ speechToggle(); }
+}, true);
+document.addEventListener('keyup', e=>{
+  if(e.code==='ArrowLeft' || e.code==='KeyA') setKey('BB',false);
+  else if(e.code==='ArrowRight' || e.code==='KeyD') setKey('SB',false);
+  else if(e.code==='Space') e.preventDefault();
+}, true);
+window.addEventListener('blur', ()=>{ setKey('BB',false); setKey('SB',false); });
+$('exec').addEventListener('click', ()=>{ fireExec(); $('exec').blur(); });
+function togglePause(){ paused=!paused; $('btnPause').firstChild.textContent = paused?'Verder ':'Pauze '; }
+$('btnPause').addEventListener('click', ()=>{ togglePause(); $('btnPause').blur(); });
+$('btnReset').addEventListener('click', ()=>{ resetAll(); $('btnReset').blur(); });
+
+/* Instellingen */
+function bindRange(id, key, fmt){ const el=$(id), out=$('v'+id.slice(1)); el.value=S[key]; out.textContent=fmt(S[key]); el.addEventListener('input', ()=>{ S[key]=parseFloat(el.value); out.textContent=fmt(S[key]); saveS(); }); }
+bindRange('sRate','rate', v=>`${v} slagen/min`);
+bindRange('sRudT','rudT', v=>`${v.toFixed(1).replace('.',',')} s`);
+bindRange('sRudMax','rudMax', v=>`${v}°`);
+bindRange('sZoom','zoom', v=>`${v} px/m`);
+for(const [id,key] of [['sHeadUp','headUp'],['sShowRud','showRud'],['sSound','sound']]){ const el=$(id); el.checked=!!S[key]; el.addEventListener('change', ()=>{ S[key]=el.checked; saveS(); if(key==='sound' && el.checked) ensureAudio(); }); }
+
+/* ---------------- Spraak ----------------
+   Twee sporen: de browser herkent WAT er gezegd wordt (Web Speech API, nl-NL),
+   de microfoon zelf meet WANNEER een woord begint (inzet van de stem). Zo telt de
+   timing van het uitvoeringswoord, ook al komt de herkende tekst een halve seconde later binnen. */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const SYN = [ // extra uitspraakvormen; horen bij het taalpakket
+  {id:'LICHTE_HAAL', text:'light paddle'},
+  {id:'HOUDEN', side:'beide', text:'houden'},
+  {id:'HOUDEN', side:'beide', text:'houden beide'},
+  {id:'VASTROEIEN', side:'beide', text:'vastroeien'},
+  {id:'STRIJKEN', side:'beide', text:'strijken'},
+  {id:'STRIJKEN', side:'beide', text:'strijken beide'},
+  {id:'UITZETTEN', text:'uitzetten'},
+  {id:'HANDEN_VLOT', text:'handen aan vlot'},
+  {id:'STERK', side:'BB', text:'bakboord sterk'},
+  {id:'STERK', side:'SB', text:'stuurboord best'},
+  {id:'STERK', side:'BB', text:'bakboord harder'},
+  {id:'STERK', side:'SB', text:'stuurboord harder'},
+  {id:'RIEMEN_HOOG', side:'SB', text:'riemen hoog stuurboord'},
+  {id:'RIEMEN_HOOG', side:'BB', text:'riemen hoog bakboord'},
+  {id:'RONDMAKEN', side:'BB', text:'rondmaken over bakboord'},
+  {id:'RONDMAKEN', side:'SB', text:'rondmaken over stuurboord'},
+];
+const EXEC_TOK = {nu:'NU', nou:'NU', af:'AF', aff:'AF', go:'AF', lopen:'LOPEN'};
+const SIDE_TOK = new Set(['bakboord','stuurboord','beide','boorden']);
+const FILLERS = new Set(['eh','eeh','ehh','uh','uhm','ehm','hm','euh']);
+const norm = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim();
+const PHRASES = [];
+(function buildPhrases(){
+  for(const c of COMMANDS) for(const s of (c.sides||[null])) PHRASES.push({id:c.id, side:s, toks:norm(LANG.say[c.id](s)).split(' ')});
+  for(const y of SYN) PHRASES.push({id:y.id, side:y.side||null, toks:norm(y.text).split(' ')});
+  for(const p of PHRASES) p.prefixOfOther = PHRASES.some(q=> q!==p && q.toks.length>p.toks.length && p.toks.every((t,i)=>q.toks[i]===t));
+})();
+function lev1(a,b){ // klopt de afstand ten hoogste 1?
+  if(Math.abs(a.length-b.length)>1) return false;
+  let i=0,j=0,d=0; while(i<a.length && j<b.length){ if(a[i]===b[j]){i++;j++;continue;} if(++d>1) return false; if(a.length>b.length) i++; else if(b.length>a.length) j++; else {i++;j++;} }
+  return d + (a.length-i) + (b.length-j) <= 1;
+}
+const tokEq = (a,b)=> a===b || (a.length>=5 && b.length>=5 && lev1(a,b));
+function matchPhrase(toks){
+  let best=null;
+  for(const p of PHRASES){
+    let j=0, hit=0, end=0, sidesOk=true, first=-1;
+    for(const t of p.toks){
+      let k=j; while(k<toks.length && !tokEq(toks[k],t)) k++;
+      if(k<toks.length){ hit++; if(first<0) first=k; j=k+1; end=j; } else if(SIDE_TOK.has(t)) sidesOk=false;
+    }
+    if(!sidesOk || !hit) continue;
+    const score = hit/p.toks.length;
+    if(score < (p.toks.length<=2 ? 1 : 0.75)) continue;
+    const cand = {p, score, end, first};
+    if(!best || better(cand, best)) best = cand;
+  }
+  return best;
+}
+// Volledige treffers gaan voor; daarna wat het eerst in de zin staat; daarna de langste formulering.
+function better(a, b){
+  const fa = a.score===1, fb = b.score===1;
+  if(fa !== fb) return fa;
+  if(a.first !== b.first) return a.first < b.first;
+  if(a.p.toks.length !== b.p.toks.length) return a.p.toks.length > b.p.toks.length;
+  return a.score > b.score;
+}
+const SPEECH = {on:false, rec:null, stream:null, ctx:null, an:null, buf:null, floor:0.003, inSpeech:false, lastLoud:0, onsets:[], sess:0, utt:new Map()};
+function micNote(msg, kind){ const el=$('micNote'); el.textContent=msg; el.className='note'+(kind?' '+kind:''); }
+function speechPoll(){
+  if(!SPEECH.an) return;
+  SPEECH.an.getFloatTimeDomainData(SPEECH.buf);
+  let s=0; for(let i=0;i<SPEECH.buf.length;i++) s+=SPEECH.buf[i]*SPEECH.buf[i];
+  const rms = Math.sqrt(s/SPEECH.buf.length), now = performance.now();
+  if(!SPEECH.inSpeech) SPEECH.floor = SPEECH.floor*0.99 + Math.max(rms,0.0005)*0.01;
+  const thr = Math.max(0.012, SPEECH.floor*3.2);
+  if(rms > thr){
+    if(!SPEECH.inSpeech && now - SPEECH.lastLoud > 180){
+      SPEECH.onsets.push({wall:now, t:simT, phase:crew.phase, wasRowing:crew.mode==='roeien', peak:rms, floor:SPEECH.floor, used:false});
+      if(SPEECH.onsets.length>40) SPEECH.onsets.shift();
+    }
+    SPEECH.inSpeech = true; SPEECH.lastLoud = now;
+    const o = SPEECH.onsets[SPEECH.onsets.length-1]; if(o && now-o.wall<1500) o.peak = Math.max(o.peak, rms);
+  } else if(SPEECH.inSpeech && now - SPEECH.lastLoud > 140) SPEECH.inSpeech = false;
+  $('vu').style.width = Math.max(0, Math.min(100, (20*Math.log10(rms/0.002))/40*100)) + '%';
+}
+function takeStartOnset(){
+  const now = performance.now();
+  const o = SPEECH.onsets.find(o=> !o.used && now-o.wall < 5000);
+  if(o){ for(const q of SPEECH.onsets) if(q.wall<=o.wall) q.used=true; }
+  return o || null;
+}
+function latestOnsetAfter(start){
+  const now = performance.now(), from = start ? start.wall+250 : now-4000;
+  let best=null; for(const o of SPEECH.onsets) if(o.wall>from && now-o.wall<4000) best=o;
+  if(best) for(const q of SPEECH.onsets) if(q.wall<=best.wall) q.used=true;
+  return best;
+}
+function voiceScore(start, toks){
+  if(!start) return null;
+  const db = 20*Math.log10(start.peak/Math.max(start.floor,1e-4));
+  let v = Math.max(0, Math.min(1, (db-10)/22));
+  if(toks.some(t=>FILLERS.has(t))) v = Math.max(0, v-0.35);
+  return v;
+}
+function showCert(tech, voice){
+  $('certTech').style.width = tech==null ? '0' : Math.round(tech*100)+'%';
+  $('certTechLbl').textContent = tech==null ? '…' : Math.round(tech*100)+'%';
+  $('certVoice').style.width = voice==null ? '0' : Math.round(voice*100)+'%';
+  $('certVoice').style.background = voice==null ? '' : voice>=0.66 ? 'var(--good)' : voice>=0.34 ? 'var(--warn)' : 'var(--bad)';
+  $('certVoiceLbl').textContent = voice==null ? '–' : voiceWord(voice);
+}
+/* Eén uiting kan meerdere commando's bevatten ("slagklaar maken … slagklaar … af").
+   We lopen de herkende woorden van links naar rechts af; u.pos onthoudt tot waar al verwerkt is,
+   zodat een tussentijdse en een definitieve herkenning niets dubbel uitvoeren. */
+function parseUtterance(u, toks, isFinal, pendingId){
+  const acts = []; let guard = 0;
+  while(u.pos < toks.length && guard++ < 12){
+    const rest = toks.slice(u.pos);
+    if(u.open){
+      const k = rest.findIndex(t=>EXEC_TOK[t]);
+      const m = matchPhrase(rest);
+      if(k>=0 && (!m || m.first > k)){ acts.push({type:'exec', word:EXEC_TOK[rest[k]]}); u.pos += k+1; u.open = null; pendingId = null; continue; }
+      if(!(m && m.score===1)) break;
+      u.open = null; // een nieuw commando vervangt de aankondiging
+    }
+    const m = matchPhrase(rest);
+    if(m){
+      const c = COMMANDS.find(c=>c.id===m.p.id);
+      const waiting = !isFinal && m.p.prefixOfOther && m.end===rest.length;
+      if(waiting || !(isFinal || m.score===1)) break;
+      acts.push({type:'issue', id:c.id, side:m.p.side});
+      u.pos += m.end;
+      if(c.exec){ u.open = c.id; pendingId = c.id; }
+      continue;
+    }
+    if(pendingId){
+      const k = rest.findIndex(t=>EXEC_TOK[t]);
+      if(k>=0 && k<=2){ acts.push({type:'exec', word:EXEC_TOK[rest[k]]}); u.pos += k+1; pendingId = null; continue; }
+    }
+    break;
+  }
+  return acts;
+}
+function onSpeech(key, text, isFinal, conf){
+  const toks = norm(text).split(' ').filter(Boolean);
+  if(!toks.length) return;
+  $('heard').textContent = text.trim();
+  let u = SPEECH.utt.get(key);
+  if(!u){ u = {pos:0, open:null, start:null}; SPEECH.utt.set(key,u); if(SPEECH.utt.size>60) SPEECH.utt.delete(SPEECH.utt.keys().next().value); }
+  const tech = isFinal ? (conf>0 ? conf : null) : null;
+  const acts = parseUtterance(u, toks, isFinal, pending ? pending.id : null);
+  let voice = voiceScore(u.start, toks);
+  for(const a of acts){
+    if(a.type==='issue'){
+      const st = takeStartOnset(); if(st) u.start = st;
+      voice = voiceScore(u.start, toks);
+      issue(a.id, a.side, st, {tech, voice});
+    } else {
+      fireExec(latestOnsetAfter(u.start), a.word, {tech, voice});
+    }
+  }
+  showCert(tech, voice);
+  if(isFinal && acts.length===0 && u.pos===0) $('heard').textContent = `${text.trim()}  (geen commando herkend)`;
+  if(isFinal && u.pos>0 && tech!=null && log[0] && !log[0].system){
+    // werk de zekerheid bij in het logboek zodra de definitieve herkenning binnen is
+    const n = log[0].notes.find(n=>n.m.startsWith('Spraak:'));
+    if(n){ n.m = `Spraak: verstaan ${Math.round(tech*100)}%` + (voice!=null?` · uitspraak ${voiceWord(voice)}`:''); renderLog(); }
+  }
+}
+async function speechStart(){
+  if(!SR){ micNote('Deze browser herkent geen spraak. Gebruik Chrome of Edge op een laptop.', 'bad'); return; }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ micNote('Geen toegang tot de microfoon in deze weergave. Open het bestand coxpit.html in Chrome of Edge.', 'bad'); return; }
+  try{ SPEECH.stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}}); }
+  catch(e){ micNote('De microfoon is geweigerd of niet beschikbaar. In de gepubliceerde pagina kan dat niet: open het bestand coxpit.html in Chrome of Edge en sta de microfoon toe.', 'bad'); return; }
+  try{
+    SPEECH.ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const src = SPEECH.ctx.createMediaStreamSource(SPEECH.stream);
+    SPEECH.an = SPEECH.ctx.createAnalyser(); SPEECH.an.fftSize = 1024; SPEECH.buf = new Float32Array(SPEECH.an.fftSize);
+    src.connect(SPEECH.an);
+  }catch(e){ SPEECH.an = null; }
+  const rec = new SR();
+  rec.lang = 'nl-NL'; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
+  rec.onresult = ev => { for(let i=ev.resultIndex;i<ev.results.length;i++){ const r = ev.results[i]; onSpeech(`${SPEECH.sess}:${i}`, r[0].transcript, r.isFinal, r[0].confidence); } };
+  rec.onerror = ev => {
+    if(ev.error==='not-allowed' || ev.error==='service-not-allowed'){ micNote('Spraakherkenning is geweigerd. Sta de microfoon toe en zet spraak opnieuw aan.', 'bad'); speechStop(); }
+    else if(ev.error==='network'){ micNote('De spraakdienst is niet bereikbaar. Controleer de internetverbinding.', 'bad'); }
+    else if(ev.error==='language-not-supported'){ micNote('Nederlandse spraakherkenning wordt in deze browser niet ondersteund.', 'bad'); speechStop(); }
+  };
+  rec.onend = ()=>{ if(SPEECH.on){ SPEECH.sess++; try{ rec.start(); }catch(e){} } };
+  SPEECH.rec = rec; SPEECH.on = true;
+  try{ rec.start(); }catch(e){}
+  $('btnMic').classList.add('on'); $('micLabel').textContent = 'Spraak uit';
+  micNote(location.protocol==='file:'
+    ? 'Luistert. Chrome vraagt bij een lokaal bestand regelmatig opnieuw om de microfoon; via een https-adres gebeurt dat één keer.'
+    : 'Luistert. Spreek de commando’s uit zoals in de boot.', 'good');
+}
+function speechStop(){
+  SPEECH.on = false;
+  try{ SPEECH.rec && SPEECH.rec.stop(); }catch(e){}
+  try{ SPEECH.stream && SPEECH.stream.getTracks().forEach(t=>t.stop()); }catch(e){}
+  try{ SPEECH.ctx && SPEECH.ctx.close(); }catch(e){}
+  SPEECH.rec = SPEECH.stream = SPEECH.ctx = SPEECH.an = null;
+  $('btnMic').classList.remove('on'); $('micLabel').textContent = 'Spraak aan'; $('vu').style.width = '0';
+}
+function speechToggle(){ SPEECH.on ? speechStop() : speechStart(); }
+$('btnMic').addEventListener('click', ()=>{ speechToggle(); $('btnMic').blur(); });
+if(!SR) micNote('Deze browser herkent geen spraak. Open het bestand coxpit.html in Chrome of Edge; tot die tijd werken de knoppen.', 'bad');
+
+/* ---------------- Hoofdlus ---------------- */
+buildCmds(); resetAll(); resize();
+let last = performance.now(), acc = 0, sampleAcc = 0, wakeAcc = 0, metricAcc = 0, bladeAcc = 0;
+const HSTEP = 1/200;
+function frame(now){
+  let dt = Math.min(0.05, (now-last)/1000); last = now;
+  speechPoll();
+  if(!paused){
+    acc += dt;
+    while(acc >= HSTEP){
+      step(HSTEP); acc -= HSTEP;
+      sampleAcc += HSTEP; wakeAcc += HSTEP; bladeAcc += HSTEP;
+      if(sampleAcc >= 0.05){ sampleAcc = 0; samples.push({t:simT, delta:boat.delta, drive: crew.mode==='roeien' && crew.phase < P.df && crew.side.BB==='roei'}); if(samples.length>2600) samples.splice(0, samples.length-2600); }
+      if(wakeAcc >= 0.25){ wakeAcc = 0; const w = toWorld(-5.4, 0); if(speed()>0.2) wake.push({x:w.x, y:w.y, t:simT}); if(wake.length>60) wake.shift(); }
+      if(bladeAcc >= 0.1){ bladeAcc = 0; bladeChecks(); }
+    }
+    metricAcc += dt; if(metricAcc > 0.5){ metricAcc = 0; renderMetrics(); }
+    if(events.length>400) events.splice(0, events.length-400);
+  }
+  if(W>0 && H>0){ drawWorld(); drawHUD(); }
+  if(TW>0) drawTimeline();
+  requestAnimationFrame(frame);
+}
+renderMetrics();
+requestAnimationFrame(frame);
+})();
+</script>
+
+</body>
+</html>
