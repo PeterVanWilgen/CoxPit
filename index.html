@@ -146,17 +146,38 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
 .log .n.good{color:var(--good)} .log .n.warn{color:var(--warn)} .log .n.bad{color:var(--bad)} .log .n.info{color:var(--muted)}
 .empty{color:var(--muted);font-size:14px}
 @media (prefers-reduced-motion: reduce){*{scroll-behavior:auto}}
+#cmdHelp{border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);padding:0;width:min(820px,calc(100vw - 32px));max-height:calc(100vh - 48px)}
+#cmdHelp::backdrop{background:rgba(8,16,20,.55)}
+.ch-head{position:sticky;top:0;background:var(--surface);display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);z-index:1}
+.ch-head h2{margin:0;font-family:var(--font-display);font-size:22px}
+.ch-note{color:var(--muted);font-size:13px;flex:1}
+#cmdHelpBody{padding:6px 18px 0;columns:2 340px;column-gap:28px}
+.ch-group{break-inside:avoid;margin:12px 0 4px}
+.ch-group h3{margin:0 0 6px;font-family:var(--font-display);font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.ch-row{break-inside:avoid;padding:6px 0;border-top:1px solid var(--line)}
+.ch-form{font-family:var(--font-display);font-weight:600;font-size:16px}
+.ch-form b{color:var(--accent)}
+.ch-what{font-size:13.5px;margin-top:1px}
+.ch-also{font-size:12.5px;color:var(--muted);margin-top:1px}
+.ch-foot{margin:10px 18px 16px;font-size:13px;color:var(--muted)}
 </style>
 
 <div class="app">
   <header class="bar">
-    <div class="brand"><span class="mark">Coxpit</span><span class="ver" id="ver">v0.4</span></div>
+    <div class="brand"><span class="mark">Coxpit</span><span class="ver" id="ver">v0.4.1</span></div>
     <div class="meta">C4x+ · perfecte ploeg · stilstaand water · spraak in Chrome of Edge</div>
     <div class="bar-actions">
+      <button class="btn" id="btnHelp" type="button">Commando's <kbd>C</kbd></button>
       <button class="btn" id="btnPause" type="button">Pauze <kbd>P</kbd></button>
       <button class="btn" id="btnReset" type="button">Terug naar het vlot</button>
     </div>
   </header>
+
+  <dialog id="cmdHelp" aria-labelledby="cmdHelpTitle">
+    <div class="ch-head"><h2 id="cmdHelpTitle">Commando's</h2><span class="ch-note">De simulatie staat stil zolang dit open is.</span><button class="btn" id="cmdHelpClose" type="button">Sluiten <kbd>C</kbd></button></div>
+    <div id="cmdHelpBody"></div>
+    <p class="ch-foot">Zeg eerst het commando, dan op het juiste moment het uitvoeringswoord (<b>vet</b>). <b>Nu</b>, <b>af</b> en <b>go</b> zijn gelijkwaardig; <b>lopen</b> hoort alleen bij laat … lopen. Volgorde en vulwoorden maken niet uit; wijk je af van het boekje, dan staat er een tip in het logboek.</p>
+  </dialog>
 
   <main class="grid">
     <section class="stage-wrap" aria-label="Water">
@@ -203,6 +224,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
             <span>Zet spraak aan (<kbd>M</kbd>) en geef de commando’s hardop. Zonder microfoon: zet bij Instellingen de commandoknoppen aan. Bij een tweedelig commando, zoals <b>Laat … lopen</b>, geef je dan het uitvoeringswoord met de grote knop of de spatiebalk. Het moment daarvan telt.</span>
             <span>Stuur met <kbd>←</kbd> (bakboord-touw) en <kbd>→</kbd> (stuurboord-touw). Ingedrukt houden beweegt het roer; loslaten houdt het vast. De roerstand zie je niet, net als in de boot.</span>
             <span>Met spraak luistert de ploeg zoals roeiers dat doen: naar de handeling, de kant en het uitvoeringswoord. Volgorde en vulwoorden maken niet uit; <b>nu</b>, <b>af</b> en <b>go</b> zijn gelijkwaardig. Wijk je af van het boekje, dan voert de ploeg het toch uit en staat er een tip in het logboek.</span>
+            <span><kbd>C</kbd> of de knop <b>Commando's</b> toont alles wat je kunt zeggen.</span>
             <span><kbd>Esc</kbd> trekt een aangekondigd commando in. <kbd>P</kbd> pauzeert.</span>
           </div>
         </details>
@@ -249,7 +271,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
 'use strict';
 
 /* ---------------- Commando's als data, los van de woorden ---------------- */
-const VERSION = '0.4';
+const VERSION = '0.4.1';
 const SIDE_NAME = {BB:'bakboord', SB:'stuurboord', beide:'beide boorden'};
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 const COMMANDS = [
@@ -315,6 +337,30 @@ const LANG = {
     AANK_AANLEG:'We gaan aanleggen aan', RIEMEN_HOOG:'Riemen hoog', HALEN:'Halen … nu',
   },
   chip:{BB:'BB', SB:'SB', beide:'Beide'},
+  // Overzicht voor de stuur (knop Commando's / toets C): boekvorm, wat de ploeg doet, wat ook begrepen wordt
+  help:{
+    HANDEN_VLOT:{form:'Handen aan het vlot', what:'Ploeg houdt de boot stil aan het vlot.'},
+    UITZETTEN:{form:'Uitzetten gelijk … nu', what:'Ploeg duwt af tot de bladen vrij van het vlot zijn.'},
+    KLAPJE:{form:'Klapje op bakboord / stuurboord … nu', what:'Eén korte haal aan die kant. Niet tijdens het roeien.', also:'klap je aan stuurboord'},
+    SLAGKLAAR_MAKEN:{form:'Slagklaar maken', what:'Ploeg rijdt op naar de inpik.', also:'slag klaarmaken, klaarmaken'},
+    SLAGKLAAR:{form:'Slagklaar … af', what:'Bladen dwars in het water, start op het uitvoeringswoord. Kijk eerst of iedereen klaar zit.', also:'slagklaar … go'},
+    PAK_OP:{form:'Pak maar weer op', what:'Met vaart in de boot meteen weer roeien, zonder slagklaar.'},
+    PWR:{form:'Light paddle  /  Medium  /  Strong', what:'Kracht per haal. Los van het tempo.', also:'lichte, normale, sterke haal'},
+    TEMPO:{form:'Tempo 20', what:'Ploeg gaat in een paar halen naar dat tempo (14–36). Los van de kracht.', also:'tempo vierentwintig, opbouwen naar tempo 30'},
+    STERK:{form:'Bakboord best  /  Stuurboord sterk', what:'Die kant trekt harder: de boot draait van die kant af.', also:'bakboord sterk, stuurboord harder'},
+    BEIDE_GELIJK:{form:'Beide boorden gelijk', what:'Beide kanten weer even hard.', also:'gelijk'},
+    OPGELET:{form:'Opgelet', what:'Aankondiging: de ploeg let op.'},
+    LAAT_LOPEN:{form:'Laat … lopen', what:'‘Laat’ bij de inpik, ‘lopen’ bij de uitpik: de ploeg stopt en laat de boot lopen.'},
+    VASTROEIEN:{form:'Vastroeien bakboord / stuurboord / beide boorden', what:'Bladen half dwars in het water: rustig afremmen.', also:'zonder kant = beide'},
+    HOUDEN:{form:'Houden bakboord / stuurboord / beide boorden … nu', what:'Bladen dwars in het water: stevig afremmen.', also:'zonder kant = beide'},
+    BEDANKT:{form:'Bedankt', what:'Bladen terug naar de ruststand.'},
+    AANK_RONDEN:{form:'We gaan ronden over bakboord / stuurboord', what:'Aankondiging. Volgt daarna ‘nu’, dan maakt de ploeg rond.'},
+    RONDMAKEN:{form:'Bakboord strijken, stuurboord halen … nu', what:'De boot draait over bakboord (omgekeerd: over stuurboord).', also:'rondmaken over bakboord … nu'},
+    STRIJKEN:{form:'Strijken bakboord / stuurboord / beide boorden … nu', what:'Achteruit roeien, rustig tempo.', also:'zonder kant = beide'},
+    HALEN:{form:'Halen bakboord / stuurboord / beide boorden … nu', what:'Strijkt de andere kant al, dan wordt het rondmaken; anders roeit alleen die kant.'},
+    AANK_AANLEG:{form:'We gaan aanleggen aan bakboord / stuurboord', what:'Aankondiging. Vaar onder 30–45° aan en leg evenwijdig aan.'},
+    RIEMEN_HOOG:{form:'Bakboord / stuurboord riemen hoog', what:'Die kant tilt de riemen uit het water en roeit niet mee.'},
+  },
   rows:{pwr:'Kracht (paddle)'},
   short:{LICHTE_HAAL:'Light', NORMALE_HAAL:'Medium', STERKE_HAAL:'Strong'},
 };
@@ -1275,7 +1321,9 @@ for(const [id,sd] of [['rBB','BB'],['rSB','SB']]){
 // Alleen echte tekstvelden houden de toetsen voor zichzelf; vinkjes en schuifjes nooit, anders stuurt het roer niet meer.
 const isField = el => el && (el.tagName==='TEXTAREA' || el.tagName==='SELECT' || (el.tagName==='INPUT' && !['checkbox','range','button'].includes(el.type)));
 document.addEventListener('keydown', e=>{
+  if($('cmdHelp').open){ if(e.code==='KeyC' || e.code==='Escape'){ e.preventDefault(); closeHelp(); } return; }
   if(isField(e.target) && e.code!=='Space') return;
+  if(e.code==='KeyC'){ openHelp(); return; }
   if(e.code==='ArrowLeft' || e.code==='KeyA'){ e.preventDefault(); ensureAudio(); setKey('BB',true); }
   else if(e.code==='ArrowRight' || e.code==='KeyD'){ e.preventDefault(); ensureAudio(); setKey('SB',true); }
   else if(e.code==='Space'){ e.preventDefault(); if(!e.repeat) fireExec(); }
@@ -1291,6 +1339,32 @@ document.addEventListener('keyup', e=>{
 window.addEventListener('blur', ()=>{ setKey('BB',false); setKey('SB',false); });
 $('exec').addEventListener('click', ()=>{ fireExec(); $('exec').blur(); });
 function togglePause(){ paused=!paused; $('btnPause').firstChild.textContent = paused?'Verder ':'Pauze '; }
+/* Commando-overzicht: wat de stuur kan zeggen. Opgebouwd uit het taalpakket, dus altijd gelijk aan wat herkend wordt. */
+let helpWasPaused = false;
+function buildHelp(){
+  const box = $('cmdHelpBody'); box.innerHTML = '';
+  const esc = t => t.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const fmt = t => esc(t).replace(/ … (nu|af|lopen)\b/g, ' … <b>$1</b>').replace(/^Laat … lopen$/,'<b>Laat</b> … <b>lopen</b>');
+  for(const g of Object.keys(LANG.groups)){
+    const sec = document.createElement('div'); sec.className='ch-group';
+    sec.innerHTML = `<h3>${esc(LANG.groups[g])}</h3>`;
+    const seen = new Set();
+    for(const c of COMMANDS.filter(c=>c.group===g)){
+      const key = c.row==='pwr' ? 'PWR' : c.id; if(seen.has(key)) continue; seen.add(key);
+      const h = LANG.help[key]; if(!h) continue;
+      const row = document.createElement('div'); row.className='ch-row';
+      row.innerHTML = `<div class="ch-form">${fmt(h.form)}</div><div class="ch-what">${esc(h.what)}</div>` + (h.also ? `<div class="ch-also">Ook: ${esc(h.also)}</div>` : '');
+      sec.appendChild(row);
+    }
+    if(sec.children.length>1) box.appendChild(sec);
+  }
+}
+function openHelp(){ const d=$('cmdHelp'); if(d.open) return; buildHelp(); helpWasPaused = paused; if(!paused) togglePause(); d.showModal(); }
+function closeHelp(){ const d=$('cmdHelp'); if(d.open) d.close(); }
+$('cmdHelp').addEventListener('close', ()=>{ if(!helpWasPaused && paused) togglePause(); });
+$('btnHelp').addEventListener('click', ()=>{ openHelp(); $('btnHelp').blur(); });
+$('cmdHelpClose').addEventListener('click', closeHelp);
+$('cmdHelp').addEventListener('click', e=>{ if(e.target.id==='cmdHelp') closeHelp(); });
 $('btnPause').addEventListener('click', ()=>{ togglePause(); $('btnPause').blur(); });
 $('btnReset').addEventListener('click', ()=>{ resetAll(); $('btnReset').blur(); });
 
@@ -1358,7 +1432,7 @@ const KW = {
   riemen:'RIEMEN', hoog:'HOOG',
   bakboord:'BB', stuurboord:'SB', beide:'BEIDE', boorden:'BEIDE',
   // vaste verhaspelingen van de herkenning
-  bijde:'BEIDE', stuurwordt:'SB', stuurword:'SB', bakwordt:'BB', backboard:'BB',
+  bijde:'BEIDE', wijde:'BEIDE', stuurwordt:'SB', stuurword:'SB', bakwordt:'BB', backboard:'BB',
   nu:'X_NU', nou:'X_NU', af:'X_AF', aff:'X_AF', go:'X_AF', goo:'X_AF', lopen:'X_LOPEN',
 };
 const ROLE_CMD = {HANDEN:'HANDEN_VLOT', VLOT:'HANDEN_VLOT', UITZETTEN:'UITZETTEN', GELIJK:'BEIDE_GELIJK', KLAPJE:'KLAPJE',
@@ -1367,7 +1441,7 @@ const ROLE_CMD = {HANDEN:'HANDEN_VLOT', VLOT:'HANDEN_VLOT', UITZETTEN:'UITZETTEN
   STRIJKEN:'STRIJKEN', HALEN:'HALEN', TEMPO:'TEMPO', PAK:'PAK_OP', AANLEGGEN:'AANK_AANLEG', RIEMEN:'RIEMEN_HOOG', HOOG:'RIEMEN_HOOG'};
 const EXEC_OF = {X_NU:'NU', X_AF:'AF', X_LOPEN:'LOPEN'};
 // Verkeerd verstane schrijfwijzen van hetzelfde woord: geen tip waard.
-const ALIAS = {stroom:'strong', oppakken:'pak', bijde:'beide', stuurwordt:'stuurboord', stuurword:'stuurboord', bakwordt:'bakboord', backboard:'bakboord', lijt:'light', lait:'light', houd:'houden', houde:'houden', klaarmaken:'slagklaar maken', klaar:'slagklaar'};
+const ALIAS = {stroom:'strong', oppakken:'pak', bijde:'beide', wijde:'beide', stuurwordt:'stuurboord', stuurword:'stuurboord', bakwordt:'bakboord', backboard:'bakboord', lijt:'light', lait:'light', houd:'houden', houde:'houden', klaarmaken:'slagklaar maken', klaar:'slagklaar'};
 const SIDE_OF = {BB:'BB', SB:'SB', BEIDE:'beide'};
 // Bij deze handelingen staat de kant in het boekje vóór het werkwoord ("bakboord best", "bakboord strijken, stuurboord halen").
 const SIDE_FIRST = new Set(['STERK','RIEMEN','HOOG','STRIJKEN','HALEN']);
@@ -1449,7 +1523,13 @@ function chunkToks(toks, from){
     }
     if(r==='NUM'){ if(cur && cur.role==='TEMPO' && cur.val==null){ cur.val = it.n; cur.end = it.i; } continue; }
     if(r==='GAAN'){ gaan = true; continue; }
-    if(r==='MAKEN'){ if(cur && cur.id==='SLAGKLAAR'){ cur.id='SLAGKLAAR_MAKEN'; cur.role='SLAGKLAAR_MAKEN'; cur.end=it.i; } continue; }
+    if(r==='MAKEN'){
+      if(cur && cur.id==='SLAGKLAAR'){ cur.id='SLAGKLAAR_MAKEN'; cur.role='SLAGKLAAR_MAKEN'; cur.end=it.i; }
+      // "rot maken over stuurboord", "lot maken …": Chrome verhaspelt 'rond', maar 'maken' + een kant is rondmaken
+      else if(cur && cur.role==='RONDEN'){ cur.role='RONDMAKEN'; cur.id='RONDMAKEN'; cur.end=it.i; } // "ronde maken"
+      else if(nxt && (nxt.r==='BB' || nxt.r==='SB')){ if(cur) close(); start('RONDMAKEN', it); if(it.i-1 >= from && !kwOf(toks[it.i-1])) cur.start = it.i-1; }
+      continue;
+    }
     if(cur){ // twee woorden die samen één commando zijn
       const a = cur.role;
       if((a==='STRIJKEN'&&r==='HALEN') || (a==='HALEN'&&r==='STRIJKEN')){
@@ -1481,7 +1561,7 @@ function bookTip(toks, c, id, side){
   const okExec = !cmd.exec || !c.exec || (c.exec.word==='LOPEN') === (cmd.exec==='LOPEN'); // nu, af en go zijn gelijkwaardig
   if(said===book && okExec) return null;
   const heard = toks.slice(c.start, c.end+1).filter(t=>!FILLERS.has(t) && !EXEC_TOK[t]).join(' ') + (c.exec ? ' '+c.exec.raw : '');
-  return `Boekje: ‘${LANG.say[id](side)}${cmd.exec ? ' … '+LANG.exec[cmd.exec] : ''}’ (gezegd: ‘${heard}’)`;
+  return `Boekje: ‘${LANG.say[id](side)}${cmd.exec ? ' … '+LANG.exec[cmd.exec] : ''}’ (Chrome verstond: ‘${heard}’)`;
 }
 const SPEECH = {on:false, rec:null, stream:null, ctx:null, an:null, buf:null, floor:0.003, inSpeech:false, lastLoud:0, onsets:[], sess:0, st:null, trace:[]};
 function micNote(msg, kind){ const el=$('micNote'); el.textContent=msg; el.className='note'+(kind?' '+kind:''); }
@@ -1540,16 +1620,18 @@ function parseUtterance(u, toks, isFinal, pendingId, force, announce){
     // Een commando met een kant maar nog zonder kant aan het eind van een zin: even wachten,
     // de kant komt soms als los stukje achteraan ("riemen hoog … stuurboord").
     if(c.open && !force && cmd && ((cmd.sides && !c.side && !c.exec) || (c.id==='TEMPO' && c.val==null))){ u.hold = performance.now(); break; }
+    const p0 = u.pos;
     u.pos = c.end + 1;
     const rng = [c.start, c.end];
     if(c.execOnly){
       if(pendingId){ acts.push({type:'exec', word:c.execOnly.word, raw:c.execOnly.raw, rng}); pendingId = null; }
       else if(c.execOnly.word==='LOPEN' && typeof crew!=='undefined' && crew.mode==='roeien'){ // 'laat' niet verstaan
-        acts.push({type:'issue', id:'LAAT_LOPEN', side:null, tip:'‘Laat’ niet verstaan; boekje: ‘Laat … lopen’', rng});
+        const before = toks.slice(p0, c.start).filter(t=>!FILLERS.has(t)).slice(-3).join(' ');
+        acts.push({type:'issue', id:'LAAT_LOPEN', side:null, tip: before ? `‘Laat’ verstaan als ‘${before}’` : '‘Laat’ niet verstaan; boekje: ‘Laat … lopen’', rng});
         acts.push({type:'exec', word:'LOPEN', raw:c.execOnly.raw, rng});
       }
       else if(announce && c.execOnly.word!=='LOPEN'){ // "We gaan ronden over bakboord … nu": de ploeg maakt rond
-        acts.push({type:'issue', id:'RONDMAKEN', side:announce.side, tip:`Boekje: ‘${LANG.say.RONDMAKEN(announce.side)} … ${LANG.exec.NU}’ (gezegd: ‘${LANG.say.AANK_RONDEN(announce.side).toLowerCase()} … ${c.execOnly.raw}’)`, rng});
+        acts.push({type:'issue', id:'RONDMAKEN', side:announce.side, tip:`Boekje: ‘${LANG.say.RONDMAKEN(announce.side)} … ${LANG.exec.NU}’ (Chrome verstond: ‘${LANG.say.AANK_RONDEN(announce.side).toLowerCase()} … ${c.execOnly.raw}’)`, rng});
         acts.push({type:'exec', word:c.execOnly.word, raw:c.execOnly.raw, rng}); announce = null;
       }
       continue;
@@ -1610,6 +1692,19 @@ function onSpeech(parts, force){
   const shown = [...parts].reverse().find(pt=>pt.text.trim()); if(shown) $('heard').textContent = shown.text.trim();
   const tech = allFinal ? (last.conf>0 ? last.conf : null) : null;
   const posBefore = st.pos;
+  // Een definitieve zin waar geen commando in zit (bijv. "rot maken over stuurboord" voordat dat herkend werd)
+  // slaan we over: anders kan een los "bakboord" daaruit aan het volgende commando blijven hangen.
+  // Uitzondering: er wacht een commando op zijn kant ("riemen hoog" … "en stuurboord").
+  if(!st.hold){
+    for(let j=0;j<parts.length;j++){
+      const [r0, r1] = ranges[j];
+      if(!parts[j].final || r1 <= st.pos) continue;
+      if(r0 > st.pos) break;
+      const useful = chunkToks(toks.slice(0, r1), st.pos).some(c=> c.id || (c.execOnly && (pending || c.execOnly.word==='LOPEN')));
+      if(useful) break;
+      st.pos = r1;
+    }
+  }
   const ann = lastAnnounce && simT - lastAnnounce.t < 8 ? lastAnnounce : null;
   const acts = parseUtterance(st, toks, allFinal, pending ? pending.id : null, force, ann);
   let voice = voiceScore(st.start, toks.slice(posBefore));
