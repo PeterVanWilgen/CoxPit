@@ -231,7 +231,9 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
     </section>
 
     <section class="log" aria-label="Logboek">
-      <div class="head"><h2>Logboek</h2><span class="sub">Nieuwste boven</span></div>
+      <div class="head"><h2>Logboek</h2><span class="sub">Nieuwste boven</span><button class="btn" id="btnCopyLog" type="button">Kopieer logboek</button></div>
+      <span class="note" id="copyNote" style="margin:0" aria-live="polite"></span>
+      <textarea id="copyFallback" readonly hidden style="width:100%;height:120px;font:12px/1.4 monospace"></textarea>
       <ol id="log"><li class="empty" style="display:block;border:none">Je ligt aan het vlot, bakboord langszij. Begin met <b>Uitzetten gelijk … nu</b>.</li></ol>
     </section>
   </main>
@@ -1101,7 +1103,8 @@ for(const [id,sd] of [['rBB','BB'],['rSB','SB']]){
   const off = ()=> setKey(sd,false);
   el.addEventListener('pointerup', off); el.addEventListener('pointercancel', off); el.addEventListener('lostpointercapture', off);
 }
-const isField = el => el && (el.tagName==='INPUT' || el.tagName==='SELECT' || el.tagName==='TEXTAREA');
+// Alleen echte tekstvelden houden de toetsen voor zichzelf; vinkjes en schuifjes nooit, anders stuurt het roer niet meer.
+const isField = el => el && (el.tagName==='TEXTAREA' || el.tagName==='SELECT' || (el.tagName==='INPUT' && !['checkbox','range','button'].includes(el.type)));
 document.addEventListener('keydown', e=>{
   if(isField(e.target) && e.code!=='Space') return;
   if(e.code==='ArrowLeft' || e.code==='KeyA'){ e.preventDefault(); ensureAudio(); setKey('BB',true); }
@@ -1123,12 +1126,36 @@ $('btnPause').addEventListener('click', ()=>{ togglePause(); $('btnPause').blur(
 $('btnReset').addEventListener('click', ()=>{ resetAll(); $('btnReset').blur(); });
 
 /* Instellingen */
-function bindRange(id, key, fmt){ const el=$(id), out=$('v'+id.slice(1)); el.value=S[key]; out.textContent=fmt(S[key]); el.addEventListener('input', ()=>{ S[key]=parseFloat(el.value); out.textContent=fmt(S[key]); saveS(); }); }
+function bindRange(id, key, fmt){ const el=$(id), out=$('v'+id.slice(1)); el.value=S[key]; out.textContent=fmt(S[key]); el.addEventListener('input', ()=>{ S[key]=parseFloat(el.value); out.textContent=fmt(S[key]); saveS(); }); el.addEventListener('change', ()=> el.blur()); }
 bindRange('sRate','rate', v=>`${v} slagen/min`);
 bindRange('sRudT','rudT', v=>`${v.toFixed(1).replace('.',',')} s`);
 bindRange('sRudMax','rudMax', v=>`${v}°`);
 bindRange('sZoom','zoom', v=>`${v} px/m`);
-for(const [id,key] of [['sHeadUp','headUp'],['sShowRud','showRud'],['sSound','sound']]){ const el=$(id); el.checked=!!S[key]; el.addEventListener('change', ()=>{ S[key]=el.checked; saveS(); if(key==='sound' && el.checked) ensureAudio(); }); }
+for(const [id,key] of [['sHeadUp','headUp'],['sShowRud','showRud'],['sSound','sound']]){ const el=$(id); el.checked=!!S[key]; el.addEventListener('change', ()=>{ S[key]=el.checked; saveS(); if(key==='sound' && el.checked) ensureAudio(); el.blur(); }); }
+
+/* Logboek kopiëren, om te delen */
+function logText(){
+  const L = [];
+  L.push(`Coxpit v0.2 — logboek (${new Date().toLocaleString('nl-NL')})`);
+  L.push(`Instellingen: tempo ${S.rate}, roer midden→aanslag ${S.rudT}s, max roer ${S.rudMax}°, spraak ${SPEECH.on?'aan':'uit'}`);
+  const steer = stats.steerDrive + stats.steerRec;
+  L.push(`Meetwaarden: sturen in de haal ${steer>0.5?Math.round(100*stats.steerDrive/steer)+'%':'–'}, roer >30° ${stats.over30.toFixed(1)}s, tegensturen ${stats.reversals}×, laat…lopen op tijd ${stats.llGood}/${stats.llTotal}, aanvaringen ${stats.collisions}, blad tegen kant ${stats.bladeHits}`);
+  L.push(`Oefening: ${['weg','bocht','rond','aan'].map(k=>`${k} ${tasks[k]?'✓':'–'}`).join(', ')}`);
+  L.push('');
+  for(const e of log.slice().reverse()){
+    L.push(`${fmtT(e.t)}  ${e.system ? e.phrase : '‘'+e.phrase+'’'}`);
+    for(const n of e.notes) L.push(`        ${n.k==='good'?'+':n.k==='bad'?'!':n.k==='warn'?'~':' '} ${n.m}`);
+  }
+  return L.join('\n');
+}
+$('btnCopyLog').addEventListener('click', ()=>{
+  const txt = logText(), ta = $('copyFallback');
+  const fallback = ()=>{ ta.hidden=false; ta.value=txt; ta.focus(); ta.select(); $('copyNote').textContent='Kopiëren lukte niet automatisch: de tekst staat geselecteerd, kopieer met Ctrl+C.'; };
+  try{
+    navigator.clipboard.writeText(txt).then(()=>{ ta.hidden=true; $('copyNote').textContent=`Logboek gekopieerd (${log.length} regels). Plak het in de chat.`; }, fallback);
+  }catch(e){ fallback(); }
+  $('btnCopyLog').blur();
+});
 
 /* ---------------- Spraak ----------------
    Twee sporen: de browser herkent WAT er gezegd wordt (Web Speech API, nl-NL),
