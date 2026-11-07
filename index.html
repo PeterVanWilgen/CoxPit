@@ -150,7 +150,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
 
 <div class="app">
   <header class="bar">
-    <div class="brand"><span class="mark">Coxpit</span><span class="ver" id="ver">v0.3.5</span></div>
+    <div class="brand"><span class="mark">Coxpit</span><span class="ver" id="ver">v0.3.6</span></div>
     <div class="meta">C4x+ · perfecte ploeg · stilstaand water · spraak in Chrome of Edge</div>
     <div class="bar-actions">
       <button class="btn" id="btnPause" type="button">Pauze <kbd>P</kbd></button>
@@ -249,7 +249,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
 'use strict';
 
 /* ---------------- Commando's als data, los van de woorden ---------------- */
-const VERSION = '0.3.5';
+const VERSION = '0.3.6';
 const SIDE_NAME = {BB:'bakboord', SB:'stuurboord', beide:'beide boorden'};
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 const COMMANDS = [
@@ -264,6 +264,7 @@ const COMMANDS = [
   {id:'STERK',           group:'sturen', sides:['BB','SB']},
   {id:'BEIDE_GELIJK',    group:'sturen'},
   {id:'TEMPO',           group:'roeien', values:[18,20,22,24,26,28]},
+  {id:'PAK_OP',          group:'roeien'},
   {id:'OPGELET',         group:'stoppen'},
   {id:'LAAT_LOPEN',      group:'stoppen', exec:'LOPEN'},
   {id:'VASTROEIEN',      group:'stoppen', sides:['BB','SB','beide']},
@@ -292,6 +293,7 @@ const LANG = {
     STERK:s=> s==='BB' ? 'Bakboord best' : 'Stuurboord sterk',
     BEIDE_GELIJK:()=>'Beide boorden gelijk',
     TEMPO:v=>`Tempo ${v}`,
+    PAK_OP:()=>'Pak maar weer op',
     OPGELET:()=>'Opgelet',
     LAAT_LOPEN:()=>'Laat',
     VASTROEIEN:s=>`Vastroeien ${SIDE_NAME[s]}`,
@@ -307,7 +309,7 @@ const LANG = {
   row:{
     HANDEN_VLOT:'Handen aan het vlot', UITZETTEN:'Uitzetten gelijk … nu', KLAPJE:'Klapje op … nu',
     SLAGKLAAR_MAKEN:'Slagklaar maken', SLAGKLAAR:'Slagklaar … af', LICHTE_HAAL:'Light paddle', NORMALE_HAAL:'Medium', STERKE_HAAL:'Strong',
-    STERK:'Bakboord best / Stuurboord sterk', BEIDE_GELIJK:'Beide boorden gelijk', TEMPO:'Tempo',
+    STERK:'Bakboord best / Stuurboord sterk', BEIDE_GELIJK:'Beide boorden gelijk', TEMPO:'Tempo', PAK_OP:'Pak maar weer op',
     OPGELET:'Opgelet', LAAT_LOPEN:'Laat … lopen', VASTROEIEN:'Vastroeien', HOUDEN:'Houden … nu', BEDANKT:'Bedankt',
     AANK_RONDEN:'We gaan ronden over', RONDMAKEN:'Strijken, halen … nu', STRIJKEN:'Strijken … nu',
     AANK_AANLEG:'We gaan aanleggen aan', RIEMEN_HOOG:'Riemen hoog', HALEN:'Halen … nu',
@@ -355,7 +357,7 @@ const saveS = ()=>{ try{ localStorage.setItem('coxpit-v0-settings', JSON.stringi
 let boat, crew, keys, simT, paused, pending, log, samples, events, stats, tasks, puddles, wake, lastSaid;
 function resetAll(){
   boat = {x:START.x, y:START.y, psi:START.psi, u:0, v:0, r:0, delta:0};
-  crew = {mode:'vlot', push:null, rate:S.rate, rateTarget:S.rate, phase:0, side:{BB:'plat', SB:'plat'}, press:{BB:1,SB:1}, pwr:'medium', stopAtFinish:false,
+  crew = {mode:'vlot', push:null, readyT:0, squareT:0, goWaiting:false, messy:false, messyT:0, rate:S.rate, rateTarget:S.rate, phase:0, side:{BB:'plat', SB:'plat'}, press:{BB:1,SB:1}, pwr:'medium', stopAtFinish:false,
           ready:null, rondSide:null, strijk:{BB:false,SB:false}, klapjeSide:null, klapjeT:0};
   keys = {BB:false, SB:false};
   simT = 0; paused = false; pending = null;
@@ -401,6 +403,15 @@ const circDist = (a,b)=> { let d=Math.abs(a-b)%1; return Math.min(d,1-d); };
 const PWR = {light:0.45, medium:1, strong:1.2}; // kracht per haal t.o.v. medium
 const where = ph => ph < P.df ? 'in de haal' : 'in de recover';
 const rowingModes = new Set(['roeien','rond','strijken']);
+const MAKEN_T = 2.5, KLAAR_T = 0.7; // s: oprijden naar slagklaar; bladen dwars in het water zetten
+const makenDone = ()=> crew.mode==='slagklaar' && crew.readyT >= MAKEN_T;
+const klaarDone = ()=> makenDone() && crew.ready==='klaar' && crew.squareT >= KLAAR_T;
+function startRowing(){
+  crew.mode='roeien'; crew.phase=0; crew.stopAtFinish=false; crew.ready=null; crew.goWaiting=false;
+  for(const sd of ['BB','SB']) if(crew.side[sd]!=='hoog') crew.side[sd]='roei';
+  crew.press.BB = crew.press.SB = 1;
+  sCatch();
+}
 const isRowing = ()=> rowingModes.has(crew.mode);
 const nearVlot = ()=> boat.x < -14.5 && boat.x > -20 && boat.y > -8 && boat.y < 18;
 const speed = ()=> Math.hypot(boat.u, boat.v);
@@ -427,7 +438,10 @@ function issue(id, side, at, meta){
   if(c.exec){
     if(pending){ /* vorige aankondiging niet afgemaakt */ events.push({t:simT, label:'×', kind:'warn'}); }
     pending = {id, side, phrase, t:m.t, phase:m.phase, wasRowing:m.wasRowing, meta};
-    if(id==='SLAGKLAAR' && crew.mode==='slagklaar') crew.ready='klaar'; // bladen verticaal in het water
+    if(id==='SLAGKLAAR' && crew.mode==='slagklaar'){
+      if(!makenDone()) sysLog('‘Slagklaar’ terwijl de ploeg nog oprijdt: wacht tot iedereen vooraan zit', 'warn');
+      crew.ready='klaar'; crew.squareT = 0; // bladen dwars in het water, zodra de ploeg vooraan zit
+    }
     lastSaid = {text: phrase+' …', t:simT, pending:true};
     events.push({t:simT, label: phrase+' …', kind:'cmd'});
     updateSaid(); updateExec(); renderCmdHighlight();
@@ -484,15 +498,14 @@ function execute(id, side, phrase, pend, meta, extraNotes){
     case 'SLAGKLAAR_MAKEN':
       if(isRowing()){ warn('De ploeg roeit al'); break; }
       if(crew.mode==='vlot') warn('Je ligt nog aan het vlot; eerst uitzetten');
-      crew.mode='slagklaar'; crew.ready='maken'; setSides('plat'); crew.phase=0;
+      crew.mode='slagklaar'; crew.ready='maken'; crew.readyT=0; crew.squareT=0; crew.goWaiting=false; setSides('plat'); crew.phase=0;
       break;
     case 'SLAGKLAAR': {
       if(isRowing()){ warn('De ploeg roeit al'); break; }
-      if(crew.mode!=='slagklaar') warn('Eerst ‘slagklaar maken’');
-      crew.mode='roeien'; crew.phase=0; crew.stopAtFinish=false; crew.ready=null;
-      for(const sd of ['BB','SB']) if(crew.side[sd]!=='hoog') crew.side[sd]='roei';
-      crew.press.BB = crew.press.SB = 1;
-      sCatch();
+      if(crew.mode!=='slagklaar'){ warn('Eerst ‘slagklaar maken’'); startRowing(); }
+      else if(!makenDone()){ bad('Go terwijl de ploeg nog oprijdt: rommelige start. Kijk eerst of iedereen vooraan zit'); crew.ready='klaar'; crew.goWaiting=true; crew.messy=true; }
+      else if(!klaarDone()){ warn('Go voordat de bladen dwars in het water staan'); crew.ready='klaar'; crew.goWaiting=true; }
+      else { good('Bladen stonden klaar'); startRowing(); }
       if(crew.side.BB==='hoog'||crew.side.SB==='hoog') warn('Riemen hoog aan één boord: die kant roeit niet mee');
       break; }
     case 'LICHTE_HAAL': case 'NORMALE_HAAL': case 'STERKE_HAAL':
@@ -505,6 +518,16 @@ function execute(id, side, phrase, pend, meta, extraNotes){
       info(side==='BB' ? 'Boot draait naar stuurboord' : 'Boot draait naar bakboord');
       break;
     case 'BEIDE_GELIJK': crew.press.BB = crew.press.SB = 1; break;
+    case 'PAK_OP':
+      // Met vaart in de boot gaat de ploeg meteen weer roeien, zonder slagklaar: eerst oprijden, dan de inpik.
+      if(crew.mode==='roeien'){ warn('De ploeg roeit al'); break; }
+      if(speed() < 0.8){ warn('Te weinig vaart om zo op te pakken; eerst slagklaar maken'); break; }
+      if(crew.mode!=='lopen' && crew.mode!=='rust') warn('Eerst laat … lopen');
+      crew.mode='roeien'; crew.stopAtFinish=false; crew.ready=null; crew.goWaiting=false;
+      for(const sd of ['BB','SB']) if(crew.side[sd]!=='hoog') crew.side[sd]='roei';
+      crew.phase = P.df + 0.001;
+      good('Ploeg pakt op bij de volgende inpik');
+      break;
     case 'TEMPO': {
       const v = Math.round(Number(side));
       if(!(v>=14 && v<=36)){ warn(`Tempo ${side} kan de ploeg niet roeien`); break; }
@@ -598,7 +621,7 @@ const voiceWord = v => v>=0.66 ? 'gedecideerd' : v>=0.34 ? 'redelijk' : 'aarzele
 /* ---------------- Ploeg: haalcyclus en krachten ---------------- */
 const ease = q => q<0?0:q>1?1:(1-Math.cos(Math.PI*q))/2;
 const lerp = (a,b,q)=> a+(b-a)*q;
-function crewRate(){ return crew.mode==='roeien' ? crew.rate : 26; }
+function crewRate(){ return crew.mode==='roeien' ? crew.rate : crew.mode==='rond' ? 13 : 26; }
 // De haal duurt ongeveer een seconde, wat het tempo ook is: bij tempo 20 is haal:recover 1:2, bij 30 ongeveer 1:1.
 const driveFrac = rate => Math.min(0.55, Math.max(0.27, rate/60));
 
@@ -608,12 +631,21 @@ function crewUpdate(h){
     const prev = c.phase;
     // het tempo gaat in een paar halen naar het gevraagde tempo; de verhouding haal:recover volgt mee
     if(c.mode==='roeien'){ c.rate += (c.rateTarget - c.rate)*Math.min(1, h/2.5); P.df = driveFrac(c.rate); }
+    if(c.messyT > 0){ c.messyT -= h; if(c.messyT <= 0){ c.press.BB = c.press.SB = 1; } }
     c.phase += h*crewRate()/60;
     const df = c.mode==='roeien' ? P.df : 0.45;
     if(prev < df && c.phase >= df) onFinish();
     if(c.mode==='rond' && prev < 0.5 && c.phase >= 0.5) sCatch();
     if(c.mode==='rond' && prev < 0.95 && c.phase >= 0.95) dropPuddles();
     if(c.phase >= 1){ c.phase -= 1; onCatch(); }
+  } else if(c.mode==='slagklaar'){
+    c.readyT += h;
+    if(c.ready==='klaar' && c.readyT >= MAKEN_T) c.squareT += h;
+    if(c.goWaiting && klaarDone()){
+      const messy = c.messy; c.messy = false; startRowing();
+      if(messy){ c.press.BB = 0.5; c.press.SB = 1; c.messyT = 1.6; } // eerste haal niet gelijk: boot slingert
+      sysLog(messy ? 'Ploeg start alsnog, niet gelijk' : 'Ploeg start', messy ? 'warn' : 'info');
+    }
   } else if(c.mode==='klapje'){
     c.klapjeT += h;
     if(c.klapjeT > 1.3){ c.mode='rust'; dropPuddles(); }
@@ -661,7 +693,7 @@ function oarPose(sd){
   if(st==='houden'){ R.squared=true; R.slide=0; return R; }
   if(st==='vast'){ R.squared=true; R.half=true; R.slide=0; return R; }
   if(st==='uit'){ R.th=TH_F; R.inWater=false; R.slide=0; return R; }
-  if(c.mode==='slagklaar'){ R.th=TH_C; R.slide=1; R.squared = c.ready==='klaar'; R.inWater = true; return R; }
+  if(c.mode==='slagklaar'){ const q = ease(Math.min(1, c.readyT/MAKEN_T)); R.th=lerp(0,TH_C,q); R.slide=q; R.squared = c.ready==='klaar' && c.squareT >= KLAAR_T*0.5; R.inWater = q>0.95; return R; }
   if(c.mode==='klapje'){ if(sd===c.klapjeSide){ const q=ease(c.klapjeT/1.3); R.th=lerp(30*DEG,-25*DEG,q); R.squared=true; R.slide=0; } return R; }
   if(st==='roei'){
     if(c.mode==='roeien'){
@@ -1295,7 +1327,7 @@ const KW = {
   laat:'LAAT',
   vastroeien:'VAST', vast:'VAST',
   houden:'HOUDEN', hou:'HOUDEN', houd:'HOUDEN', houde:'HOUDEN',
-  bedankt:'BEDANKT', tempo:'TEMPO',
+  bedankt:'BEDANKT', tempo:'TEMPO', pak:'PAK', oppakken:'PAK', stroom:'STRONG',
   gaan:'GAAN', ronden:'RONDEN', rondmaken:'RONDMAKEN',
   strijken:'STRIJKEN', halen:'HALEN',
   aanleggen:'AANLEGGEN',
@@ -1308,10 +1340,10 @@ const KW = {
 const ROLE_CMD = {HANDEN:'HANDEN_VLOT', VLOT:'HANDEN_VLOT', UITZETTEN:'UITZETTEN', GELIJK:'BEIDE_GELIJK', KLAPJE:'KLAPJE',
   SLAGKLAAR:'SLAGKLAAR', KLAARMAKEN:'SLAGKLAAR_MAKEN', LIGHT:'LICHTE_HAAL', MEDIUM:'NORMALE_HAAL', STRONG:'STERKE_HAAL', STERK:'STERK', OPGELET:'OPGELET',
   LAAT:'LAAT_LOPEN', VAST:'VASTROEIEN', HOUDEN:'HOUDEN', BEDANKT:'BEDANKT', RONDEN:'AANK_RONDEN', RONDMAKEN:'RONDMAKEN',
-  STRIJKEN:'STRIJKEN', HALEN:'HALEN', TEMPO:'TEMPO', AANLEGGEN:'AANK_AANLEG', RIEMEN:'RIEMEN_HOOG', HOOG:'RIEMEN_HOOG'};
+  STRIJKEN:'STRIJKEN', HALEN:'HALEN', TEMPO:'TEMPO', PAK:'PAK_OP', AANLEGGEN:'AANK_AANLEG', RIEMEN:'RIEMEN_HOOG', HOOG:'RIEMEN_HOOG'};
 const EXEC_OF = {X_NU:'NU', X_AF:'AF', X_LOPEN:'LOPEN'};
 // Verkeerd verstane schrijfwijzen van hetzelfde woord: geen tip waard.
-const ALIAS = {bijde:'beide', stuurwordt:'stuurboord', stuurword:'stuurboord', bakwordt:'bakboord', backboard:'bakboord', lijt:'light', lait:'light', houd:'houden', houde:'houden', klaarmaken:'slagklaar maken', klaar:'slagklaar'};
+const ALIAS = {stroom:'strong', oppakken:'pak', bijde:'beide', stuurwordt:'stuurboord', stuurword:'stuurboord', bakwordt:'bakboord', backboard:'bakboord', lijt:'light', lait:'light', houd:'houden', houde:'houden', klaarmaken:'slagklaar maken', klaar:'slagklaar'};
 const SIDE_OF = {BB:'BB', SB:'SB', BEIDE:'beide'};
 // Bij deze handelingen staat de kant in het boekje vóór het werkwoord ("bakboord best", "bakboord strijken, stuurboord halen").
 const SIDE_FIRST = new Set(['STERK','RIEMEN','HOOG','STRIJKEN','HALEN']);
