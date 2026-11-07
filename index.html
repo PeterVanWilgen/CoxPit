@@ -150,7 +150,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
 
 <div class="app">
   <header class="bar">
-    <div class="brand"><span class="mark">Coxpit</span><span class="ver" id="ver">v0.3.2</span></div>
+    <div class="brand"><span class="mark">Coxpit</span><span class="ver" id="ver">v0.3.3</span></div>
     <div class="meta">C4x+ · perfecte ploeg · stilstaand water · spraak in Chrome of Edge</div>
     <div class="bar-actions">
       <button class="btn" id="btnPause" type="button">Pauze <kbd>P</kbd></button>
@@ -249,7 +249,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
 'use strict';
 
 /* ---------------- Commando's als data, los van de woorden ---------------- */
-const VERSION = '0.3.2';
+const VERSION = '0.3.3';
 const SIDE_NAME = {BB:'bakboord', SB:'stuurboord', beide:'beide boorden'};
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 const COMMANDS = [
@@ -351,7 +351,7 @@ const saveS = ()=>{ try{ localStorage.setItem('coxpit-v0-settings', JSON.stringi
 let boat, crew, keys, simT, paused, pending, log, samples, events, stats, tasks, puddles, wake, lastSaid;
 function resetAll(){
   boat = {x:START.x, y:START.y, psi:START.psi, u:0, v:0, r:0, delta:0};
-  crew = {mode:'vlot', phase:0, side:{BB:'plat', SB:'plat'}, press:{BB:1,SB:1}, pwr:'medium', stopAtFinish:false,
+  crew = {mode:'vlot', push:null, phase:0, side:{BB:'plat', SB:'plat'}, press:{BB:1,SB:1}, pwr:'medium', stopAtFinish:false,
           ready:null, rondSide:null, strijk:{BB:false,SB:false}, klapjeSide:null, klapjeT:0};
   keys = {BB:false, SB:false};
   simT = 0; paused = false; pending = null;
@@ -466,8 +466,10 @@ function execute(id, side, phrase, pend, meta, extraNotes){
       if(crew.mode==='vlot' || nearVlot()){
         crew.mode='rust'; setSides('plat');
         // duw van het vlot af: oostwaarts in de wereld, omgerekend naar de boot
-        const ex=1, ey=0, c=Math.cos(boat.psi), s=Math.sin(boat.psi);
-        boat.u += 0.75*(ex*c + ey*s); boat.v += 0.75*(-ex*s + ey*c); boat.r -= 0.012; // boeg iets van het vlot af
+        // De ploeg duwt af tot de bladen vrij van het vlot zijn. Voor en achter duwen nooit precies even hard:
+        // daardoor draait de boot een beetje, elke keer anders.
+        crew.push = {t:0, need: 0.45 + 0.3*Math.random()};
+        boat.r += -0.012 + (Math.random()*2-1)*0.03; // zijwaarts drijven draait de boeg naar het vlot: iets tegengesteld duwen
         good('Boot vrij van het vlot');
       } else warn('Uitzetten kan alleen aan het vlot');
       break;
@@ -674,7 +676,27 @@ function dropPuddles(){
 
 /* ---------------- Natuurkunde: drie vrijheidsgraden ---------------- */
 const HULL = [[5.5,0],[3.6,0.36],[1.5,0.46],[-2,0.46],[-4.2,0.40],[-5.45,0.34],[-5.45,-0.34],[-4.2,-0.40],[-2,-0.46],[1.5,-0.46],[3.6,-0.36]];
+// Kleinste afstand van een blad (plat of op de inpik) tot het vlot.
+function vlotClearance(){
+  let m = Infinity;
+  for(const rw of ROWERS) for(const sd of ['BB','SB']) for(const th of [0, TH_C]){
+    const b = bladeBody(rw.x, sd, th), w = toWorld(b.x, b.y);
+    const dx = Math.max(VLOT.x0 - w.x, 0, w.x - VLOT.x1), dy = Math.max(VLOT.y0 - w.y, 0, w.y - VLOT.y1);
+    m = Math.min(m, Math.hypot(dx, dy));
+  }
+  return m;
+}
 function step(h){
+  // uitzetten: de ploeg duwt de boot zijwaarts van het vlot (oostwaarts) tot de bladen vrij zijn
+  if(crew.push){
+    crew.push.t += h;
+    const clr = vlotClearance();
+    if(clr >= crew.push.need || crew.push.t > 5) crew.push = null;
+    else {
+      const c = Math.cos(boat.psi), s = Math.sin(boat.psi), want = Math.min(0.9, 0.5 + 0.8*(crew.push.need - clr));
+      const de = want - (boat.u*c - boat.v*s); boat.u += de*c; boat.v -= de*s;
+    }
+  }
   // roer
   const lim = S.rudMax*DEG, rate = lim/S.rudT;
   const dIn = (keys.BB?1:0) - (keys.SB?1:0);
@@ -1230,7 +1252,7 @@ const KW = {
   opgelet:'OPGELET',
   laat:'LAAT',
   vastroeien:'VAST', vast:'VAST',
-  houden:'HOUDEN', hou:'HOUDEN', houd:'HOUDEN',
+  houden:'HOUDEN', hou:'HOUDEN', houd:'HOUDEN', houde:'HOUDEN',
   bedankt:'BEDANKT',
   gaan:'GAAN', ronden:'RONDEN', rondmaken:'RONDMAKEN',
   strijken:'STRIJKEN', halen:'HALEN',
@@ -1245,7 +1267,7 @@ const ROLE_CMD = {HANDEN:'HANDEN_VLOT', VLOT:'HANDEN_VLOT', UITZETTEN:'UITZETTEN
   STRIJKEN:'STRIJKEN', HALEN:null, AANLEGGEN:'AANK_AANLEG', RIEMEN:'RIEMEN_HOOG', HOOG:'RIEMEN_HOOG'};
 const EXEC_OF = {X_NU:'NU', X_AF:'AF', X_LOPEN:'LOPEN'};
 // Verkeerd verstane schrijfwijzen van hetzelfde woord: geen tip waard.
-const ALIAS = {lijt:'light', lait:'light', houd:'houden'};
+const ALIAS = {lijt:'light', lait:'light', houd:'houden', houde:'houden', klaarmaken:'slagklaar maken'};
 const SIDE_OF = {BB:'BB', SB:'SB', BEIDE:'beide'};
 // Bij deze handelingen staat de kant in het boekje vóór het werkwoord ("bakboord best", "bakboord strijken, stuurboord halen").
 const SIDE_FIRST = new Set(['STERK','RIEMEN','HOOG','STRIJKEN','HALEN']);
@@ -1426,12 +1448,29 @@ function parseUtterance(u, toks, isFinal, pendingId, force, announce){
 }
 /* Chrome nummert zijn resultaten tijdens het spreken soms opnieuw. Daarom werken we op de hele tekst
    van de sessie (alle resultaten achter elkaar) en onthouden we één positie tot waar alles verwerkt is. */
+const SEEN_FINALS = []; // definitieve stukken die al verwerkt zijn, over sessies heen
 const newSpeechState = ()=> ({pos:0, start:null, hold:null, covered:new Set(), reported:new Set(), parts:null});
 function onSpeech(parts, force){
   const st = SPEECH.st; st.parts = parts;
   const toks = [], ranges = [];
   for(const pt of parts){ const t = retok(norm(pt.text).split(' ').filter(Boolean)); ranges.push([toks.length, toks.length+t.length]); toks.push(...t); }
   if(!toks.length) return;
+  // Chrome stuurt een al verwerkte zin soms nog eens als nieuw resultaat. Zo'n herhaling binnen 15 s tellen we niet.
+  const wall = performance.now(), entries = [];
+  parts.forEach((pt, j)=>{
+    const [r0, r1] = ranges[j]; entries[j] = null;
+    if(!pt.final || r1===r0) return;
+    const key = SPEECH.sess+':'+j, txt = toks.slice(r0, r1).join(' ');
+    let e = SEEN_FINALS.find(f=>f.key===key);
+    if(e && e.text!==txt){ SEEN_FINALS.splice(SEEN_FINALS.indexOf(e),1); e = null; }
+    if(!e){
+      const dup = SEEN_FINALS.find(f=> f.text===txt && f.done && wall - f.wall < 15000);
+      e = {key, text:txt, wall, done:false, dup:!!dup}; SEEN_FINALS.push(e); if(SEEN_FINALS.length>60) SEEN_FINALS.shift();
+      if(dup) sysLog(`Dubbel ontvangen van de spraakherkenning, genegeerd: “${pt.text.trim()}”`, 'info');
+    }
+    entries[j] = e;
+    if(e.dup) for(let i=r0;i<r1;i++) toks[i] = '_';
+  });
   const last = parts[parts.length-1], allFinal = !!last.final;
   const shown = [...parts].reverse().find(pt=>pt.text.trim()); if(shown) $('heard').textContent = shown.text.trim();
   const tech = allFinal ? (last.conf>0 ? last.conf : null) : null;
@@ -1451,6 +1490,7 @@ function onSpeech(parts, force){
       fireExec(latestOnsetAfter(st.start), a.word, {tech, voice}, a.raw);
     }
   }
+  parts.forEach((pt, j)=>{ const e = entries[j]; if(e && st.pos >= ranges[j][1]) e.done = true; });
   showCert(tech, voice);
   // Wat gehoord maar niet herkend is, komt in het logboek: zo kan het taalpakket worden aangevuld.
   parts.forEach((pt, j)=>{
@@ -1459,7 +1499,7 @@ function onSpeech(parts, force){
     if(!(r1 <= st.pos || (allFinal && !st.hold))) return;
     st.reported.add(j);
     let hit = false; for(let i=r0;i<r1;i++) if(st.covered.has(i)) hit = true;
-    if(!hit && toks.slice(r0,r1).some(t=>!FILLERS.has(t))){
+    if(!hit && toks.slice(r0,r1).some(t=>!FILLERS.has(t) && t!=='_')){
       sysLog(`Spraak niet herkend: “${pt.text.trim()}”`, 'info');
       if(j===parts.length-1) $('heard').textContent = `${pt.text.trim()}  (geen commando herkend)`;
     }
