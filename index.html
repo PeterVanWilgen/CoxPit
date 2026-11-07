@@ -150,7 +150,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
 
 <div class="app">
   <header class="bar">
-    <div class="brand"><span class="mark">Coxpit</span><span class="ver" id="ver">v0.3.4</span></div>
+    <div class="brand"><span class="mark">Coxpit</span><span class="ver" id="ver">v0.3.5</span></div>
     <div class="meta">C4x+ · perfecte ploeg · stilstaand water · spraak in Chrome of Edge</div>
     <div class="bar-actions">
       <button class="btn" id="btnPause" type="button">Pauze <kbd>P</kbd></button>
@@ -211,7 +211,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
         <details class="settings" id="setDetails">
           <summary>Instellingen</summary>
           <div class="set-grid">
-            <label for="sRate">Tempo</label><span class="val" id="vRate"></span>
+            <label for="sRate">Starttempo</label><span class="val" id="vRate"></span>
             <input type="range" id="sRate" min="16" max="26" step="1">
             <label for="sRudT">Roer van midden naar aanslag</label><span class="val" id="vRudT"></span>
             <input type="range" id="sRudT" min="0.4" max="2.5" step="0.1">
@@ -249,7 +249,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
 'use strict';
 
 /* ---------------- Commando's als data, los van de woorden ---------------- */
-const VERSION = '0.3.4';
+const VERSION = '0.3.5';
 const SIDE_NAME = {BB:'bakboord', SB:'stuurboord', beide:'beide boorden'};
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 const COMMANDS = [
@@ -263,6 +263,7 @@ const COMMANDS = [
   {id:'STERKE_HAAL',     group:'roeien', row:'pwr'},
   {id:'STERK',           group:'sturen', sides:['BB','SB']},
   {id:'BEIDE_GELIJK',    group:'sturen'},
+  {id:'TEMPO',           group:'roeien', values:[18,20,22,24,26,28]},
   {id:'OPGELET',         group:'stoppen'},
   {id:'LAAT_LOPEN',      group:'stoppen', exec:'LOPEN'},
   {id:'VASTROEIEN',      group:'stoppen', sides:['BB','SB','beide']},
@@ -290,6 +291,7 @@ const LANG = {
     STERKE_HAAL:()=>'Strong',
     STERK:s=> s==='BB' ? 'Bakboord best' : 'Stuurboord sterk',
     BEIDE_GELIJK:()=>'Beide boorden gelijk',
+    TEMPO:v=>`Tempo ${v}`,
     OPGELET:()=>'Opgelet',
     LAAT_LOPEN:()=>'Laat',
     VASTROEIEN:s=>`Vastroeien ${SIDE_NAME[s]}`,
@@ -305,7 +307,7 @@ const LANG = {
   row:{
     HANDEN_VLOT:'Handen aan het vlot', UITZETTEN:'Uitzetten gelijk … nu', KLAPJE:'Klapje op … nu',
     SLAGKLAAR_MAKEN:'Slagklaar maken', SLAGKLAAR:'Slagklaar … af', LICHTE_HAAL:'Light paddle', NORMALE_HAAL:'Medium', STERKE_HAAL:'Strong',
-    STERK:'Bakboord best / Stuurboord sterk', BEIDE_GELIJK:'Beide boorden gelijk',
+    STERK:'Bakboord best / Stuurboord sterk', BEIDE_GELIJK:'Beide boorden gelijk', TEMPO:'Tempo',
     OPGELET:'Opgelet', LAAT_LOPEN:'Laat … lopen', VASTROEIEN:'Vastroeien', HOUDEN:'Houden … nu', BEDANKT:'Bedankt',
     AANK_RONDEN:'We gaan ronden over', RONDMAKEN:'Strijken, halen … nu', STRIJKEN:'Strijken … nu',
     AANK_AANLEG:'We gaan aanleggen aan', RIEMEN_HOOG:'Riemen hoog', HALEN:'Halen … nu',
@@ -319,11 +321,11 @@ const LANG = {
 const DEG = Math.PI/180;
 const P = {
   L:11.0,                 // lengte (m)
-  mu:480, mv:1100, Iz:12000, // massa vooruit, zijwaarts (incl. meebewegend water), traagheid om de as
+  mu:480, mv:1100, Iz:4000, // massa vooruit, zijwaarts (incl. meebewegend water), traagheid om de as
   kx:25,                  // weerstand vooruit: X = -kx·u|u|
   ky1:250, ky:700,        // zijwaartse weerstand (kiel)
   krU:3000, kr0:800, kr2:30000, // gierdemping
-  Fpeak:440,              // piekkracht per boord tijdens de haal (N)
+  Fpeak:555,              // piekkracht per boord tijdens de haal (N)
   dBlade:2.0,             // effectieve arm van de bladkracht tot de hartlijn (m)
   kHold:180, kVast:60, kFlat:4, // remming per boord: houden, vastroeien, bladen plat
   kR:12, kRd:40, lR:5.3,  // roer: lift, extra weerstand, afstand roer tot zwaartepunt
@@ -353,7 +355,7 @@ const saveS = ()=>{ try{ localStorage.setItem('coxpit-v0-settings', JSON.stringi
 let boat, crew, keys, simT, paused, pending, log, samples, events, stats, tasks, puddles, wake, lastSaid;
 function resetAll(){
   boat = {x:START.x, y:START.y, psi:START.psi, u:0, v:0, r:0, delta:0};
-  crew = {mode:'vlot', push:null, phase:0, side:{BB:'plat', SB:'plat'}, press:{BB:1,SB:1}, pwr:'medium', stopAtFinish:false,
+  crew = {mode:'vlot', push:null, rate:S.rate, rateTarget:S.rate, phase:0, side:{BB:'plat', SB:'plat'}, press:{BB:1,SB:1}, pwr:'medium', stopAtFinish:false,
           ready:null, rondSide:null, strijk:{BB:false,SB:false}, klapjeSide:null, klapjeT:0};
   keys = {BB:false, SB:false};
   simT = 0; paused = false; pending = null;
@@ -499,10 +501,16 @@ function execute(id, side, phrase, pend, meta, extraNotes){
       break;
     case 'STERK':
       if(!rowing){ warn('Er wordt niet geroeid'); break; }
-      crew.press.BB = side==='BB' ? 1.4 : 1; crew.press.SB = side==='SB' ? 1.4 : 1;
+      crew.press.BB = side==='BB' ? 1.8 : 1; crew.press.SB = side==='SB' ? 1.8 : 1;
       info(side==='BB' ? 'Boot draait naar stuurboord' : 'Boot draait naar bakboord');
       break;
     case 'BEIDE_GELIJK': crew.press.BB = crew.press.SB = 1; break;
+    case 'TEMPO': {
+      const v = Math.round(Number(side));
+      if(!(v>=14 && v<=36)){ warn(`Tempo ${side} kan de ploeg niet roeien`); break; }
+      crew.rateTarget = v; if(!isRowing()){ crew.rate = v; info('Geldt vanaf de volgende keer roeien'); }
+      else info(v > crew.rate+0.5 ? 'Ploeg gaat omhoog in tempo' : v < crew.rate-0.5 ? 'Ploeg gaat omlaag in tempo' : 'Tempo blijft gelijk');
+      break; }
     case 'OPGELET': info('Aankondiging'); break;
     case 'LAAT_LOPEN': {
       if(crew.mode==='roeien'){
@@ -590,12 +598,16 @@ const voiceWord = v => v>=0.66 ? 'gedecideerd' : v>=0.34 ? 'redelijk' : 'aarzele
 /* ---------------- Ploeg: haalcyclus en krachten ---------------- */
 const ease = q => q<0?0:q>1?1:(1-Math.cos(Math.PI*q))/2;
 const lerp = (a,b,q)=> a+(b-a)*q;
-function crewRate(){ return crew.mode==='roeien' ? S.rate : 26; }
+function crewRate(){ return crew.mode==='roeien' ? crew.rate : 26; }
+// De haal duurt ongeveer een seconde, wat het tempo ook is: bij tempo 20 is haal:recover 1:2, bij 30 ongeveer 1:1.
+const driveFrac = rate => Math.min(0.55, Math.max(0.27, rate/60));
 
 function crewUpdate(h){
   const c = crew;
   if(rowingModes.has(c.mode)){
     const prev = c.phase;
+    // het tempo gaat in een paar halen naar het gevraagde tempo; de verhouding haal:recover volgt mee
+    if(c.mode==='roeien'){ c.rate += (c.rateTarget - c.rate)*Math.min(1, h/2.5); P.df = driveFrac(c.rate); }
     c.phase += h*crewRate()/60;
     const df = c.mode==='roeien' ? P.df : 0.45;
     if(prev < df && c.phase >= df) onFinish();
@@ -989,7 +1001,7 @@ function drawHUD(){
   const lines = [
     ['SNELHEID', `${sp.toFixed(1).replace('.',',')} m/s`],
     ['SPLIT', `${split} /500 m`],
-    ['TEMPO', isRowing()? `${crewRate()}` : '–'],
+    ['TEMPO', isRowing()? `${Math.round(crewRate())}` : '–'],
     ['PLOEG', crewStateText()],
   ];
   ctx.font = '600 12px "Barlow Condensed", "Arial Narrow", sans-serif';
@@ -1121,7 +1133,13 @@ function buildCmds(){
     const h = document.createElement('div'); h.className='sec-title'; h.style.margin='0'; h.textContent = LANG.groups[g]; wrap.appendChild(h);
     const doneRows = new Set();
     for(const c of list){
-      if(c.row){ // verwante commando's zonder kant op één regel, als knopjes
+      if(c.values){
+        const row = document.createElement('div'); row.className='cmd-row';
+        const lbl = document.createElement('span'); lbl.className='lbl'; lbl.textContent = LANG.row[c.id]; row.appendChild(lbl);
+        const chips = document.createElement('span'); chips.className='chips';
+        for(const v of c.values){ const b=document.createElement('button'); b.type='button'; b.className='chip'; b.textContent=v; b.title=LANG.say[c.id](v); b.dataset.id=c.id; b.dataset.side=v; b.addEventListener('click', ()=>{ issue(c.id, String(v)); b.blur(); }); chips.appendChild(b); }
+        row.appendChild(chips); wrap.appendChild(row);
+      } else if(c.row){ // verwante commando's zonder kant op één regel, als knopjes
         if(doneRows.has(c.row)) continue; doneRows.add(c.row);
         const row = document.createElement('div'); row.className='cmd-row';
         const lbl = document.createElement('span'); lbl.className='lbl'; lbl.textContent = LANG.rows[c.row]; row.appendChild(lbl);
@@ -1223,6 +1241,7 @@ $('btnReset').addEventListener('click', ()=>{ resetAll(); $('btnReset').blur(); 
 /* Instellingen */
 function bindRange(id, key, fmt){ const el=$(id), out=$('v'+id.slice(1)); el.value=S[key]; out.textContent=fmt(S[key]); el.addEventListener('input', ()=>{ S[key]=parseFloat(el.value); out.textContent=fmt(S[key]); saveS(); }); el.addEventListener('change', ()=> el.blur()); }
 bindRange('sRate','rate', v=>`${v} slagen/min`);
+$('sRate').addEventListener('input', ()=>{ if(crew){ crew.rateTarget = S.rate; if(!isRowing()) crew.rate = S.rate; } });
 bindRange('sRudT','rudT', v=>`${v.toFixed(1).replace('.',',')} s`);
 bindRange('sRudMax','rudMax', v=>`${v}°`);
 bindRange('sZoom','zoom', v=>`${v} px/m`);
@@ -1276,31 +1295,36 @@ const KW = {
   laat:'LAAT',
   vastroeien:'VAST', vast:'VAST',
   houden:'HOUDEN', hou:'HOUDEN', houd:'HOUDEN', houde:'HOUDEN',
-  bedankt:'BEDANKT',
+  bedankt:'BEDANKT', tempo:'TEMPO',
   gaan:'GAAN', ronden:'RONDEN', rondmaken:'RONDMAKEN',
   strijken:'STRIJKEN', halen:'HALEN',
   aanleggen:'AANLEGGEN',
   riemen:'RIEMEN', hoog:'HOOG',
   bakboord:'BB', stuurboord:'SB', beide:'BEIDE', boorden:'BEIDE',
+  // vaste verhaspelingen van de herkenning
+  bijde:'BEIDE', stuurwordt:'SB', stuurword:'SB', bakwordt:'BB', backboard:'BB',
   nu:'X_NU', nou:'X_NU', af:'X_AF', aff:'X_AF', go:'X_AF', goo:'X_AF', lopen:'X_LOPEN',
 };
 const ROLE_CMD = {HANDEN:'HANDEN_VLOT', VLOT:'HANDEN_VLOT', UITZETTEN:'UITZETTEN', GELIJK:'BEIDE_GELIJK', KLAPJE:'KLAPJE',
   SLAGKLAAR:'SLAGKLAAR', KLAARMAKEN:'SLAGKLAAR_MAKEN', LIGHT:'LICHTE_HAAL', MEDIUM:'NORMALE_HAAL', STRONG:'STERKE_HAAL', STERK:'STERK', OPGELET:'OPGELET',
   LAAT:'LAAT_LOPEN', VAST:'VASTROEIEN', HOUDEN:'HOUDEN', BEDANKT:'BEDANKT', RONDEN:'AANK_RONDEN', RONDMAKEN:'RONDMAKEN',
-  STRIJKEN:'STRIJKEN', HALEN:'HALEN', AANLEGGEN:'AANK_AANLEG', RIEMEN:'RIEMEN_HOOG', HOOG:'RIEMEN_HOOG'};
+  STRIJKEN:'STRIJKEN', HALEN:'HALEN', TEMPO:'TEMPO', AANLEGGEN:'AANK_AANLEG', RIEMEN:'RIEMEN_HOOG', HOOG:'RIEMEN_HOOG'};
 const EXEC_OF = {X_NU:'NU', X_AF:'AF', X_LOPEN:'LOPEN'};
 // Verkeerd verstane schrijfwijzen van hetzelfde woord: geen tip waard.
-const ALIAS = {lijt:'light', lait:'light', houd:'houden', houde:'houden', klaarmaken:'slagklaar maken', klaar:'slagklaar'};
+const ALIAS = {bijde:'beide', stuurwordt:'stuurboord', stuurword:'stuurboord', bakwordt:'bakboord', backboard:'bakboord', lijt:'light', lait:'light', houd:'houden', houde:'houden', klaarmaken:'slagklaar maken', klaar:'slagklaar'};
 const SIDE_OF = {BB:'BB', SB:'SB', BEIDE:'beide'};
 // Bij deze handelingen staat de kant in het boekje vóór het werkwoord ("bakboord best", "bakboord strijken, stuurboord halen").
 const SIDE_FIRST = new Set(['STERK','RIEMEN','HOOG','STRIJKEN','HALEN']);
 const FILLERS = new Set(['eh','eeh','ehh','uh','uhm','ehm','hm','euh']);
 const OPTIONAL = new Set(['op','aan','het','de','over','we']);
+const NUMW = {zestien:16, zeventien:17, achttien:18, negentien:19, twintig:20, eenentwintig:21, tweeentwintig:22, drieentwintig:23,
+  vierentwintig:24, vijfentwintig:25, zesentwintig:26, zevenentwintig:27, achtentwintig:28, negenentwintig:29, dertig:30, eenendertig:31, tweeendertig:32};
+const numOf = t => /^\d{1,2}$/.test(t) ? Number(t) : (NUMW[t] || null);
 const EXEC_TOK = {}; for(const [w,r] of Object.entries(KW)) if(EXEC_OF[r]) EXEC_TOK[w] = EXEC_OF[r];
 const norm = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim();
 /* De herkenning zet spaties niet altijd waar wij ze verwachten ("slag klaarmaken", "stuur boord").
    Plak 1–3 opeenvolgende woorden aan elkaar en knip ze opnieuw in bekende roeiwoorden. */
-const VOCAB = new Set([...Object.keys(KW), ...FILLERS, 'paddle', 'peddel', 'haal']); // ook woorden zonder betekenis, om "lightpaddle" te knippen
+const VOCAB = new Set([...Object.keys(KW), ...Object.keys(NUMW), ...FILLERS, 'paddle', 'peddel', 'haal']); // ook woorden zonder betekenis, om "lightpaddle" te knippen
 function segment(s){
   const best = new Array(s.length+1).fill(null); best[0] = [];
   for(let i=0;i<s.length;i++){ if(!best[i]) continue;
@@ -1315,7 +1339,13 @@ function retok(toks){
       const seg = segment(toks.slice(i,i+w).join(''));
       if(seg && seg.length){ out.push(...seg); i += w; done = true; break; }
     }
-    if(!done){ out.push(toks[i]); i++; }
+    if(!done){
+      const t = toks[i]; let cutDone = !!kwKey(t); if(cutDone) out.push(t);
+      for(let k=t.length-5; k>=2 && !cutDone; k--){ const tail = t.slice(k), head = t.slice(0,k); if(VOCAB.has(tail) && tail.length>=5){ out.push(head, tail); cutDone = true; } }
+      for(let k=5; k<=t.length-2 && !cutDone; k++){ const head = t.slice(0,k), tail = t.slice(k); if(VOCAB.has(head)){ out.push(head, tail); cutDone = true; } }
+      if(!cutDone) out.push(t);
+      i++;
+    }
   }
   return out;
 }
@@ -1325,7 +1355,9 @@ function lev1(a,b){ // klopt de afstand ten hoogste 1?
   return d + (a.length-i) + (b.length-j) <= 1;
 }
 // Gelijk bij ten hoogste één letter verschil, of als een afgekapt woord ("strijk", "rondmaak") het begin is van een roeiwoord.
-const tokEq = (a,b)=> a===b || (a.length>=5 && b.length>=5 && lev1(a,b)) || (a.length>=5 && b.length-a.length<=2 && b.startsWith(a))
+// Klankvorm: schrijfwijzen die hetzelfde klinken ("backbard" ~ "bakboord", "border" ~ "boorden").
+const phon = w => w.replace(/ck/g,'k').replace(/c/g,'k').replace(/oo/g,'o').replace(/aa/g,'a').replace(/ee/g,'e').replace(/uu/g,'u').replace(/ij/g,'ei').replace(/dt\b/g,'t').replace(/w/g,'v');
+const tokEq = (a,b)=> a===b || (a.length>=5 && b.length>=5 && lev1(phon(a),phon(b))) || (a.length>=5 && b.length>=5 && lev1(a,b)) || (a.length>=5 && b.length-a.length<=2 && b.startsWith(a))
   || (a.length>=6 && b.length>=7 && Math.abs(a.length-b.length)<=2 && a.slice(0,5)===b.slice(0,5)); // "strijkke", "slagklare"
 // Het roeiwoord achter een herkend woord, ook als de herkenning er een letter naast zat ("strijk", "bakbord").
 function kwKey(t){
@@ -1335,11 +1367,11 @@ function kwKey(t){
   return key;
 }
 const kwOf = t => { const k = kwKey(t); return k ? KW[k] : null; };
-const isAct = r => r && !EXEC_OF[r] && !SIDE_OF[r];
+const isAct = r => r && r!=='NUM' && !EXEC_OF[r] && !SIDE_OF[r];
 const sideOK = (id, sd) => { const c = COMMANDS.find(c=>c.id===id); return c.sides ? (sd && c.sides.includes(sd) ? sd : (!sd && c.sides.includes('beide') ? 'beide' : null)) : null; };
 /* Knip de woorden in commando's: elk stuk heeft een handeling, eventueel een kant en een uitvoeringswoord. */
 function chunkToks(toks, from){
-  const items = []; for(let i=from;i<toks.length;i++){ const t=toks[i]; if(FILLERS.has(t)) continue; const r=kwOf(t); if(r) items.push({r, i, t}); }
+  const items = []; for(let i=from;i<toks.length;i++){ const t=toks[i]; if(FILLERS.has(t)) continue; const n=numOf(t); if(n!=null){ items.push({r:'NUM', i, t, n}); continue; } const r=kwOf(t); if(r) items.push({r, i, t}); }
   const out = []; let cur = null, pendSide = null, gaan = false;
   const close = (end)=>{ if(cur){ cur.end = Math.max(cur.end, end ?? cur.end); out.push(cur); cur = null; } };
   const start = (role, it)=>{ cur = {role, id:ROLE_CMD[role], side:null, start: pendSide ? pendSide.i : it.i, end: it.i, exec:null, gaan};
@@ -1359,6 +1391,7 @@ function chunkToks(toks, from){
       else pendSide = it;
       continue;
     }
+    if(r==='NUM'){ if(cur && cur.role==='TEMPO' && cur.val==null){ cur.val = it.n; cur.end = it.i; } continue; }
     if(r==='GAAN'){ gaan = true; continue; }
     if(r==='MAKEN'){ if(cur && cur.id==='SLAGKLAAR'){ cur.id='SLAGKLAAR_MAKEN'; cur.role='SLAGKLAAR_MAKEN'; cur.end=it.i; } continue; }
     if(cur){ // twee woorden die samen één commando zijn
@@ -1450,7 +1483,7 @@ function parseUtterance(u, toks, isFinal, pendingId, force, announce){
     const cmd = c.id ? COMMANDS.find(x=>x.id===c.id) : null;
     // Een commando met een kant maar nog zonder kant aan het eind van een zin: even wachten,
     // de kant komt soms als los stukje achteraan ("riemen hoog … stuurboord").
-    if(c.open && !force && cmd && cmd.sides && !c.side && !c.exec){ u.hold = performance.now(); break; }
+    if(c.open && !force && cmd && ((cmd.sides && !c.side && !c.exec) || (c.id==='TEMPO' && c.val==null))){ u.hold = performance.now(); break; }
     u.pos = c.end + 1;
     const rng = [c.start, c.end];
     if(c.execOnly){
@@ -1466,6 +1499,10 @@ function parseUtterance(u, toks, isFinal, pendingId, force, announce){
       continue;
     }
     if(!cmd) continue;
+    if(c.id==='TEMPO'){
+      if(c.val==null){ acts.push({type:'noval', id:c.id, rng}); continue; }
+      acts.push({type:'issue', id:'TEMPO', side:String(c.val), tip:null, rng}); continue;
+    }
     const side = cmd.sides ? sideOK(c.id, SIDE_OF[c.side]) : null;
     if(cmd.sides && !side){ acts.push({type:'noside', id:c.id, rng}); continue; }
     acts.push({type:'issue', id:c.id, side, tip: bookTip(toks, c, c.id, side), rng});
@@ -1515,6 +1552,8 @@ function onSpeech(parts, force){
       lastSpeechIssue = {id:a.id, side:a.side, wall:performance.now(), on};
       voice = voiceScore(st.start, toks.slice(a.rng[0], a.rng[1]+1));
       issue(a.id, a.side, on, {tech, voice, tip:a.tip});
+    } else if(a.type==='noval'){
+      sysLog('‘Tempo’ zonder getal: de ploeg weet niet welk tempo', 'warn');
     } else if(a.type==='noside'){
       sysLog(`‘${LANG.row[a.id].replace(/ … nu$/,'').replace(/ (op|aan|over)$/,'')}’ zonder kant: de ploeg weet niet welk boord`, 'warn');
     } else {
@@ -1563,7 +1602,7 @@ async function speechStart(){
     const fin = []; for(let i=ev.resultIndex;i<ev.results.length;i++) if(ev.results[i].isFinal) fin.push(`#${i} “${ev.results[i][0].transcript.trim()}”`);
     const posB = SPEECH.st ? SPEECH.st.pos : 0;
     const acts = onSpeech(parts) || [];
-    if(fin.length || acts.length) SPEECH.trace.push(`${fmtT(simT)}  s${SPEECH.sess} vanaf #${ev.resultIndex}/${ev.results.length} pos ${posB}→${SPEECH.st?SPEECH.st.pos:'-'}  ${fin.join(' ')}${acts.length?'  ⇒ '+acts.map(a=>a.type==='exec'?a.word:a.type==='issue'?a.id+(a.side?' '+a.side:''):'zonder kant').join(', '):''}`);
+    if(fin.length || acts.length) SPEECH.trace.push(`${fmtT(simT)}  s${SPEECH.sess} vanaf #${ev.resultIndex}/${ev.results.length} pos ${posB}→${SPEECH.st?SPEECH.st.pos:'-'}  ${fin.join(' ')}${acts.length?'  ⇒ '+acts.map(a=>a.type==='exec'?a.word:a.type==='issue'?a.id+(a.side?' '+a.side:''):a.type==='noval'?'tempo zonder getal':'zonder kant').join(', '):''}`);
     if(SPEECH.trace.length > 120) SPEECH.trace.splice(0, SPEECH.trace.length-120);
   };
   rec.onerror = ev => {
