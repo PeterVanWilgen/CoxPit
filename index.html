@@ -54,6 +54,8 @@ kbd{font-family:var(--font-display);font-size:.8em;border:1px solid var(--line);
 .stage-wrap{grid-area:stage;display:flex;flex-direction:column;gap:10px;min-width:0}
 .stage{position:relative;height:clamp(300px,48vh,600px);border-radius:var(--radius);overflow:hidden;background:#7d9858}
 .stage canvas{display:block;width:100%;height:100%}
+.no-board .board{display:none}
+.no-board .stage{height:clamp(320px,66vh,820px)}
 .panel{grid-area:panel;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);display:flex;flex-direction:column;min-width:0;align-self:start}
 .board{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:10px 14px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px}
 .board .cmd-group{margin:0;gap:4px}
@@ -148,7 +150,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
 
 <div class="app">
   <header class="bar">
-    <div class="brand"><span class="mark">Coxpit</span><span class="ver" id="ver">v0.3.1</span></div>
+    <div class="brand"><span class="mark">Coxpit</span><span class="ver" id="ver">v0.3.2</span></div>
     <div class="meta">C4x+ · perfecte ploeg · stilstaand water · spraak in Chrome of Edge</div>
     <div class="bar-actions">
       <button class="btn" id="btnPause" type="button">Pauze <kbd>P</kbd></button>
@@ -198,7 +200,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
         <details class="settings">
           <summary>Zo werkt het</summary>
           <div class="howto" style="margin-top:8px">
-            <span>Klik een commando. Bij een tweedelig commando, zoals <b>Laat … lopen</b>, geef je het uitvoeringswoord met de grote knop of de spatiebalk. Het moment daarvan telt.</span>
+            <span>Zet spraak aan (<kbd>M</kbd>) en geef de commando’s hardop. Zonder microfoon: zet bij Instellingen de commandoknoppen aan. Bij een tweedelig commando, zoals <b>Laat … lopen</b>, geef je dan het uitvoeringswoord met de grote knop of de spatiebalk. Het moment daarvan telt.</span>
             <span>Stuur met <kbd>←</kbd> (bakboord-touw) en <kbd>→</kbd> (stuurboord-touw). Ingedrukt houden beweegt het roer; loslaten houdt het vast. De roerstand zie je niet, net als in de boot.</span>
             <span>Met spraak luistert de ploeg zoals roeiers dat doen: naar de handeling, de kant en het uitvoeringswoord. Volgorde en vulwoorden maken niet uit; <b>nu</b>, <b>af</b> en <b>go</b> zijn gelijkwaardig. Wijk je af van het boekje, dan voert de ploeg het toch uit en staat er een tip in het logboek.</span>
             <span><kbd>Esc</kbd> trekt een aangekondigd commando in. <kbd>P</kbd> pauzeert.</span>
@@ -220,6 +222,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
             <label for="sHeadUp">Kaart draait mee met de boot</label><input type="checkbox" id="sHeadUp">
             <label for="sShowRud">Roerstand tonen (instructeur)</label><input type="checkbox" id="sShowRud">
             <label for="sSound">Geluid van de haal</label><input type="checkbox" id="sSound">
+            <label for="sShowCmds">Commandoknoppen tonen (zonder spraak)</label><input type="checkbox" id="sShowCmds">
           </div>
           <p class="note">Boot- en roerwaarden zijn startwaarden voor een C4x+, bedoeld om af te stellen.</p>
         </details>
@@ -246,7 +249,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
 'use strict';
 
 /* ---------------- Commando's als data, los van de woorden ---------------- */
-const VERSION = '0.3.1';
+const VERSION = '0.3.2';
 const SIDE_NAME = {BB:'bakboord', SB:'stuurboord', beide:'beide boorden'};
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 const COMMANDS = [
@@ -340,7 +343,7 @@ const inVlot = (x,y)=> inR(VLOT,x,y);
 const isWater = (x,y)=> (inR(W1,x,y)||inR(W2,x,y)) && !inVlot(x,y);
 
 /* ---------------- Instellingen ---------------- */
-const S = {rate:20, rudT:1.0, rudMax:40, zoom:9, headUp:true, showRud:false, sound:true};
+const S = {rate:20, rudT:1.0, rudMax:40, zoom:9, headUp:true, showRud:false, sound:true, showCmds:false};
 try{ const saved = JSON.parse(localStorage.getItem('coxpit-v0-settings')||'null'); if(saved) Object.assign(S, saved); }catch(e){}
 const saveS = ()=>{ try{ localStorage.setItem('coxpit-v0-settings', JSON.stringify(S)); }catch(e){} };
 
@@ -410,7 +413,9 @@ function sideList(s){ return s==='beide' ? ['BB','SB'] : [s]; }
 
 /* at: moment van de inzet van de stem (spraak) of van de klik; meta: zekerheid van de spraakherkenning */
 const momentNow = ()=> ({t:simT, phase:phaseNow(), wasRowing: crew.mode==='roeien'});
+let lastAnnounce = null; // laatste 'we gaan ronden over …', voor een los uitvoeringswoord daarna
 function issue(id, side, at, meta){
+  lastAnnounce = id==='AANK_RONDEN' ? {side, t:simT} : null;
   ensureAudio();
   const c = COMMANDS.find(c=>c.id===id);
   const phrase = LANG.say[id](side);
@@ -1177,7 +1182,9 @@ bindRange('sRate','rate', v=>`${v} slagen/min`);
 bindRange('sRudT','rudT', v=>`${v.toFixed(1).replace('.',',')} s`);
 bindRange('sRudMax','rudMax', v=>`${v}°`);
 bindRange('sZoom','zoom', v=>`${v} px/m`);
-for(const [id,key] of [['sHeadUp','headUp'],['sShowRud','showRud'],['sSound','sound']]){ const el=$(id); el.checked=!!S[key]; el.addEventListener('change', ()=>{ S[key]=el.checked; saveS(); if(key==='sound' && el.checked) ensureAudio(); el.blur(); }); }
+const applyCmds = ()=> document.body.classList.toggle('no-board', !S.showCmds);
+for(const [id,key] of [['sHeadUp','headUp'],['sShowRud','showRud'],['sSound','sound'],['sShowCmds','showCmds']]){ const el=$(id); el.checked=!!S[key]; el.addEventListener('change', ()=>{ S[key]=el.checked; saveS(); if(key==='sound' && el.checked) ensureAudio(); if(key==='showCmds') applyCmds(); el.blur(); }); }
+applyCmds();
 
 /* Logboek kopiëren, om te delen */
 function logText(){
@@ -1215,7 +1222,7 @@ const KW = {
   handen:'HANDEN', vlot:'VLOT',
   uitzetten:'UITZETTEN', gelijk:'GELIJK',
   klapje:'KLAPJE',
-  slagklaar:'SLAGKLAAR', maken:'MAKEN',
+  slagklaar:'SLAGKLAAR', maken:'MAKEN', klaarmaken:'KLAARMAKEN',
   light:'LIGHT', lichte:'LIGHT', licht:'LIGHT', lijt:'LIGHT', lait:'LIGHT',
   medium:'MEDIUM', normale:'MEDIUM', normaal:'MEDIUM',
   strong:'STRONG', sterke:'STRONG',
@@ -1233,7 +1240,7 @@ const KW = {
   nu:'X_NU', nou:'X_NU', af:'X_AF', aff:'X_AF', go:'X_AF', goo:'X_AF', lopen:'X_LOPEN',
 };
 const ROLE_CMD = {HANDEN:'HANDEN_VLOT', VLOT:'HANDEN_VLOT', UITZETTEN:'UITZETTEN', GELIJK:'BEIDE_GELIJK', KLAPJE:'KLAPJE',
-  SLAGKLAAR:'SLAGKLAAR', LIGHT:'LICHTE_HAAL', MEDIUM:'NORMALE_HAAL', STRONG:'STERKE_HAAL', STERK:'STERK', OPGELET:'OPGELET',
+  SLAGKLAAR:'SLAGKLAAR', KLAARMAKEN:'SLAGKLAAR_MAKEN', LIGHT:'LICHTE_HAAL', MEDIUM:'NORMALE_HAAL', STRONG:'STERKE_HAAL', STERK:'STERK', OPGELET:'OPGELET',
   LAAT:'LAAT_LOPEN', VAST:'VASTROEIEN', HOUDEN:'HOUDEN', BEDANKT:'BEDANKT', RONDEN:'AANK_RONDEN', RONDMAKEN:'RONDMAKEN',
   STRIJKEN:'STRIJKEN', HALEN:null, AANLEGGEN:'AANK_AANLEG', RIEMEN:'RIEMEN_HOOG', HOOG:'RIEMEN_HOOG'};
 const EXEC_OF = {X_NU:'NU', X_AF:'AF', X_LOPEN:'LOPEN'};
@@ -1323,7 +1330,9 @@ function chunkToks(toks, from){
   }
   if(cur) out.push(Object.assign(cur, {open:true}));
   for(const c of out){
-    if(c.gaan && (c.id==='RONDMAKEN')) c.id = 'AANK_RONDEN';
+    // "We gaan rondmaken over bakboord" zonder uitvoeringswoord is de aankondiging; mét "nu" of "go" de uitvoering.
+    if(c.gaan && c.id==='RONDMAKEN' && !c.exec) c.id = 'AANK_RONDEN';
+    if(c.id==='AANK_RONDEN' && c.exec && c.exec.word!=='LOPEN') c.id = 'RONDMAKEN';
   }
   return out;
 }
@@ -1388,7 +1397,7 @@ function showCert(tech, voice){
 /* Eén uiting kan meerdere commando's bevatten ("slagklaar maken … slagklaar … af").
    u.pos onthoudt tot waar al verwerkt is, zodat een tussentijdse en een definitieve herkenning niets dubbel uitvoeren.
    Een stuk wordt pas uitgevoerd als het af is: er volgt een uitvoeringswoord of een volgend commando, of de herkenning is definitief. */
-function parseUtterance(u, toks, isFinal, pendingId, force){
+function parseUtterance(u, toks, isFinal, pendingId, force, announce){
   const acts = []; u.hold = null;
   for(const c of chunkToks(toks, u.pos)){
     if(c.open && !isFinal) break;
@@ -1398,7 +1407,14 @@ function parseUtterance(u, toks, isFinal, pendingId, force){
     if(c.open && !force && cmd && cmd.sides && !c.side && !c.exec){ u.hold = performance.now(); break; }
     u.pos = c.end + 1;
     const rng = [c.start, c.end];
-    if(c.execOnly){ if(pendingId){ acts.push({type:'exec', word:c.execOnly.word, raw:c.execOnly.raw, rng}); pendingId = null; } continue; }
+    if(c.execOnly){
+      if(pendingId){ acts.push({type:'exec', word:c.execOnly.word, raw:c.execOnly.raw, rng}); pendingId = null; }
+      else if(announce && c.execOnly.word!=='LOPEN'){ // "We gaan ronden over bakboord … nu": de ploeg maakt rond
+        acts.push({type:'issue', id:'RONDMAKEN', side:announce.side, tip:`Boekje: ‘${LANG.say.RONDMAKEN(announce.side)} … ${LANG.exec.NU}’ (gezegd: ‘${LANG.say.AANK_RONDEN(announce.side).toLowerCase()} … ${c.execOnly.raw}’)`, rng});
+        acts.push({type:'exec', word:c.execOnly.word, raw:c.execOnly.raw, rng}); announce = null;
+      }
+      continue;
+    }
     if(!cmd) continue;
     const side = cmd.sides ? sideOK(c.id, SIDE_OF[c.side]) : null;
     if(cmd.sides && !side){ acts.push({type:'noside', id:c.id, rng}); continue; }
@@ -1420,7 +1436,8 @@ function onSpeech(parts, force){
   const shown = [...parts].reverse().find(pt=>pt.text.trim()); if(shown) $('heard').textContent = shown.text.trim();
   const tech = allFinal ? (last.conf>0 ? last.conf : null) : null;
   const posBefore = st.pos;
-  const acts = parseUtterance(st, toks, allFinal, pending ? pending.id : null, force);
+  const ann = lastAnnounce && simT - lastAnnounce.t < 8 ? lastAnnounce : null;
+  const acts = parseUtterance(st, toks, allFinal, pending ? pending.id : null, force, ann);
   let voice = voiceScore(st.start, toks.slice(posBefore));
   for(const a of acts){
     for(let i=a.rng[0]; i<=a.rng[1]; i++) st.covered.add(i);
