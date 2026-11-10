@@ -164,7 +164,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
 
 <div class="app">
   <header class="bar">
-    <div class="brand"><span class="mark">Coxpit</span><span class="ver" id="ver">v0.4.1</span></div>
+    <div class="brand"><span class="mark">Coxpit</span><span class="ver" id="ver">v0.4.2</span></div>
     <div class="meta">C4x+ · perfecte ploeg · stilstaand water · spraak in Chrome of Edge</div>
     <div class="bar-actions">
       <button class="btn" id="btnHelp" type="button">Commando's <kbd>C</kbd></button>
@@ -271,7 +271,7 @@ details.settings summary{cursor:pointer;font-family:var(--font-display);font-wei
 'use strict';
 
 /* ---------------- Commando's als data, los van de woorden ---------------- */
-const VERSION = '0.4.1';
+const VERSION = '0.4.2';
 const SIDE_NAME = {BB:'bakboord', SB:'stuurboord', beide:'beide boorden'};
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 const COMMANDS = [
@@ -1757,14 +1757,20 @@ async function speechStart(){
   if(!SR){ micNote('Deze browser herkent geen spraak. Gebruik Chrome of Edge op een laptop.', 'bad'); return; }
   if(!window.isSecureContext){ micNote(`De microfoon werkt alleen op een beveiligde verbinding. Open https://${location.host}${location.pathname} (met https).`, 'bad'); return; }
   if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ micNote('Geen toegang tot de microfoon in deze weergave. Open de pagina in Chrome of Edge.', 'bad'); return; }
+  // Op een telefoon kunnen de spraakherkenning en onze eigen geluidsmeter de microfoon niet delen: de herkenning
+  // hoort dan niets. Daar laten we de meter weg; de timing komt dan van de herkenning zelf en is minder precies.
+  const MOBILE = (navigator.userAgentData && navigator.userAgentData.mobile) || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  SPEECH.an = null; SPEECH.stream = null;
+  if(!MOBILE){
   try{ SPEECH.stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}}); }
-  catch(e){ micNote('De microfoon is geweigerd of niet beschikbaar. In de gepubliceerde pagina kan dat niet: open het bestand coxpit.html in Chrome of Edge en sta de microfoon toe.', 'bad'); return; }
+  catch(e){ micNote('De microfoon is geweigerd of niet beschikbaar. Sta de microfoon toe voor deze site (slotje links van het adres) en zet spraak opnieuw aan.', 'bad'); return; }
   try{
     SPEECH.ctx = new (window.AudioContext||window.webkitAudioContext)();
     const src = SPEECH.ctx.createMediaStreamSource(SPEECH.stream);
     SPEECH.an = SPEECH.ctx.createAnalyser(); SPEECH.an.fftSize = 1024; SPEECH.buf = new Float32Array(SPEECH.an.fftSize);
     src.connect(SPEECH.an);
   }catch(e){ SPEECH.an = null; }
+  }
   const rec = new SR();
   rec.lang = 'nl-NL'; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
   SPEECH.st = newSpeechState();
@@ -1786,7 +1792,9 @@ async function speechStart(){
   SPEECH.rec = rec; SPEECH.on = true;
   try{ rec.start(); }catch(e){}
   $('btnMic').classList.add('on'); $('micLabel').textContent = 'Spraak uit';
-  micNote(location.protocol==='file:'
+  micNote(MOBILE
+    ? 'Luistert (telefoon). De geluidsmeter staat uit, zodat de herkenning de microfoon heeft; de timing van uitvoeringswoorden is daardoor minder precies. Voor de volledige versie: laptop met Chrome of Edge.'
+    : location.protocol==='file:'
     ? 'Luistert. Chrome vraagt bij een lokaal bestand regelmatig opnieuw om de microfoon; via een https-adres gebeurt dat één keer.'
     : 'Luistert. Spreek de commando’s uit zoals in de boot.', 'good');
 }
