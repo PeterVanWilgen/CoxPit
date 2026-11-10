@@ -1755,7 +1755,8 @@ function onSpeech(parts, force){
 function speechHoldCheck(){ const st = SPEECH.st; if(st && st.hold && performance.now() - st.hold > 2500 && st.parts) onSpeech(st.parts, true); }
 async function speechStart(){
   if(!SR){ micNote('Deze browser herkent geen spraak. Gebruik Chrome of Edge op een laptop.', 'bad'); return; }
-  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ micNote('Geen toegang tot de microfoon in deze weergave. Open het bestand coxpit.html in Chrome of Edge.', 'bad'); return; }
+  if(!window.isSecureContext){ micNote(`De microfoon werkt alleen op een beveiligde verbinding. Open https://${location.host}${location.pathname} (met https).`, 'bad'); return; }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ micNote('Geen toegang tot de microfoon in deze weergave. Open de pagina in Chrome of Edge.', 'bad'); return; }
   try{ SPEECH.stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}}); }
   catch(e){ micNote('De microfoon is geweigerd of niet beschikbaar. In de gepubliceerde pagina kan dat niet: open het bestand coxpit.html in Chrome of Edge en sta de microfoon toe.', 'bad'); return; }
   try{
